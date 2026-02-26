@@ -249,11 +249,11 @@ namespace MonitorToDeckLink
                 bool gotNewFrame = false;
                 try
                 {
-                    int hr = deskDupe.TryAcquireNextFrame(0,
+                    SharpDX.Result hr = deskDupe.TryAcquireNextFrame(0,
                         out OutputDuplicateFrameInformation frameInfo,
                         out SharpDX.DXGI.Resource desktopResource);
 
-                    if (hr >= 0 && desktopResource != null)
+                    if (hr.Success && desktopResource != null)
                     {
                         using (desktopResource)
                         using (var desktopTex = desktopResource.QueryInterface<Texture2D>())
@@ -304,7 +304,7 @@ namespace MonitorToDeckLink
                 // Copy UYVY bytes into DeckLink frame via Marshal
                 deckFrame.GetBytes(out IntPtr deckPtr);
                 fixed (byte* src = uyvyBuf)
-                    Buffer.MemoryCopy(src, (void*)deckPtr, uyvyBuf.Length, uyvyBuf.Length);
+                    System.Buffer.MemoryCopy(src, (void*)deckPtr, uyvyBuf.Length, uyvyBuf.Length);
 
                 deckOutput.ScheduleVideoFrame(deckFrame,
                     frameNumber * frameDuration, frameDuration, TimeSpan.TicksPerSecond);
