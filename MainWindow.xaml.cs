@@ -329,6 +329,7 @@ namespace MonitorToDeckLink
             int    timeouts      = 0;
 
             Log("Entering capture loop...");
+            Log("Waiting for first frame from DXGI...");
             while (!ct.IsCancellationRequested)
             {
                 double targetMs = frameNumber * framePeriodMs;
@@ -342,6 +343,7 @@ namespace MonitorToDeckLink
                     var hr = deskDupe.TryAcquireNextFrame(0,
                         out OutputDuplicateFrameInformation fi,
                         out SharpDX.DXGI.Resource res);
+                    if (frameNumber == 0) Log($"TryAcquireNextFrame hr={hr.Code} res={(res == null ? "null" : "ok")}");
                     if (hr.Success && res != null)
                     {
                         using (res)
@@ -349,10 +351,15 @@ namespace MonitorToDeckLink
                             d3dDevice.ImmediateContext.CopyResource(t, stagingTex);
                         deskDupe.ReleaseFrame();
                         got = true; timeouts = 0;
+                        if (frameNumber == 0) Log("First DXGI frame captured.");
                     }
                     else timeouts++;
                 }
-                catch (SharpDX.SharpDXException) { timeouts++; }
+                catch (SharpDX.SharpDXException ex)
+                {
+                    if (timeouts == 0) Log($"TryAcquireNextFrame exception: {ex.ResultCode} {ex.Message}");
+                    timeouts++;
+                }
 
                 int    rowBytes = format.Width * 2;
                 byte[] uyvy     = new byte[rowBytes * format.Height];
