@@ -159,37 +159,31 @@ namespace MonitorToDeckLink
             Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)fvt[2])(frame);
         }
 
+        private int _schedSlot = -1;
+
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale, System.Action<string> log)
         {
             bool verbose = (time < dur * 2);
-            // Try to QI for IDeckLinkMutableVideoFrame (69E2639F) - that's what CreateVideoFrame returns
-            // Then try IDeckLinkVideoFrame (3F716FE0)
-            // The vtable pointer of either of these IS the interface ptr ScheduleVideoFrame needs
-            Guid mutableGuid = new Guid("69E2639F-40DA-4E19-B6F2-20ACE815C390");
-            Guid videoGuid   = new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17");
-            
-            IntPtr frameArg = frame;
-            int qiHr = Marshal.QueryInterface(frame, ref mutableGuid, out IntPtr mutablePtr);
-            if (verbose) log($"QI IDeckLinkMutableVideoFrame hr=0x{qiHr:X8} ptr=0x{mutablePtr:X}");
-            if (qiHr == 0 && mutablePtr != IntPtr.Zero)
+
+            if (_schedSlot < 0)
             {
-                // QI for base IDeckLinkVideoFrame from the mutable one
-                int qiHr2 = Marshal.QueryInterface(mutablePtr, ref videoGuid, out IntPtr videoPtr);
-                if (verbose) log($"QI IDeckLinkVideoFrame hr=0x{qiHr2:X8} ptr=0x{videoPtr:X}");
-                if (qiHr2 == 0 && videoPtr != IntPtr.Zero)
+                // Probe every slot to find ScheduleVideoFrame
+                // It returns S_OK when given a valid frame, valid time params
+                // E_ACCESSDENIED or E_INVALIDARG indicates wrong slot or wrong state
+                // S_OK = found it
+                for (int s = 10; s <= 18; s++)
                 {
-                    frameArg = videoPtr;
-                    Marshal.Release(mutablePtr);
+                    int thr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[s])(_ptr, frame, time, dur, scale);
+                    log($"ScheduleVideoFrame slot[{s}] hr=0x{thr:X8}");
+                    if (thr == 0) { _schedSlot = s; log($"-> found ScheduleVideoFrame at slot {s}"); return 0; }
                 }
-                else frameArg = mutablePtr;
+                // None worked - use slot 13 as default
+                _schedSlot = 13;
+                log("WARNING: no slot returned S_OK for ScheduleVideoFrame");
+                return -1;
             }
 
-            if (verbose) log($"Calling slot[13] with frameArg=0x{frameArg:X} time={time} dur={dur} scale={scale}");
-            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frameArg, time, dur, scale);
-            if (verbose) log($"ScheduleVideoFrame hr=0x{hr:X8}");
-
-            if (frameArg != frame) Marshal.Release(frameArg);
-            return hr;
+            return Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[_schedSlot])(_ptr, frame, time, dur, scale);
         }
 
         // Modern SDK slot 14
