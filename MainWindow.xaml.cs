@@ -29,6 +29,7 @@ namespace MonitorToDeckLink
     {
         public string Name { get; set; } = "";
         public IDeckLink Device { get; set; } = null!;
+        public IntPtr RawPtr { get; set; } = IntPtr.Zero;  // Raw COM pointer for QI
         public override string ToString() => Name;
     }
 
@@ -86,6 +87,11 @@ namespace MonitorToDeckLink
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e) => StopCapture();
 
         private void btnClearLog_Click(object sender, RoutedEventArgs e) => txtLog.Text = "";
+        private void btnCopyLog_Click(object sender, RoutedEventArgs e)
+        {
+            Clipboard.SetText(txtLog.Text);
+            SetStatus("Log copied to clipboard.");
+        }
 
         // ── Logging ───────────────────────────────────────────────────────────
 
@@ -157,8 +163,11 @@ namespace MonitorToDeckLink
                     iterator.Next(out IDeckLink device);
                     if (device == null) break;
                     device.GetDisplayName(out string name);
-                    devices.Add(new DeckLinkDeviceInfo { Name = name, Device = device });
-                    Log($"  Found DeckLink device: {name}");
+                    // Capture the raw COM pointer BEFORE the RCW takes over
+                    IntPtr rawPtr = Marshal.GetIUnknownForObject(device);
+                    // AddRef already happened in GetIUnknownForObject, keep one ref alive
+                    devices.Add(new DeckLinkDeviceInfo { Name = name, Device = device, RawPtr = rawPtr });
+                    Log($"  Found DeckLink device: {name}  rawPtr=0x{rawPtr:X}");
                 }
                 Log($"Found {devices.Count} DeckLink device(s).");
             }
@@ -192,7 +201,7 @@ namespace MonitorToDeckLink
 
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
-            _captureTask = Task.Run(() => CaptureLoop(monitor, dlInfo.Device, format, token), token);
+            _captureTask = Task.Run(() => CaptureLoop(monitor, dlInfo, format, token), token);
             _captureTask.ContinueWith(t => Dispatcher.Invoke(() =>
             {
                 btnStart.IsEnabled = true;
@@ -225,9 +234,10 @@ namespace MonitorToDeckLink
 
         // ── Capture + output loop ─────────────────────────────────────────────
 
-        private unsafe void CaptureLoop(MonitorInfo monitor, IDeckLink deckLink,
+        private unsafe void CaptureLoop(MonitorInfo monitor, DeckLinkDeviceInfo deckLinkInfo,
             OutputFormatInfo format, CancellationToken ct)
         {
+            IDeckLink deckLink = deckLinkInfo.Device;
             Log("Creating D3D11 device...");
             using var d3dDevice = new SharpDX.Direct3D11.Device(
                 SharpDX.Direct3D.DriverType.Hardware, DeviceCreationFlags.BgraSupport);
@@ -285,7 +295,10 @@ namespace MonitorToDeckLink
                 ("IDeckLinkOutput_v10_11", "CC5C8A6E-3F2F-4B3A-87EA-FD78AF300564"),
             };
 
-            IntPtr iunkPtr = Marshal.GetIUnknownForObject(deckLink);
+            // Use the raw COM pointer stored at enumeration time
+            IntPtr iunkPtr = deckLinkInfo.RawPtr != IntPtr.Zero
+                ? deckLinkInfo.RawPtr
+                : Marshal.GetIUnknownForObject(deckLink);
             Log($"IUnknown ptr: 0x{iunkPtr:X}");
 
             IntPtr outputPtr = IntPtr.Zero;
@@ -302,7 +315,8 @@ namespace MonitorToDeckLink
                     break;
                 }
             }
-            Marshal.Release(iunkPtr);
+            // Don't release iunkPtr if it came from RawPtr (we hold that ref)
+            if (deckLinkInfo.RawPtr == IntPtr.Zero) Marshal.Release(iunkPtr);
 
             if (outputPtr == IntPtr.Zero)
                 throw new Exception("No IDeckLinkOutput interface found on this device. Check device selection.");

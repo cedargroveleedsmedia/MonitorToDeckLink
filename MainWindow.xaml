@@ -165,6 +165,9 @@
                     <Button Content="Clear" DockPanel.Dock="Right" Click="btnClearLog_Click"
                             Background="Transparent" Foreground="#6C7086" BorderThickness="0"
                             FontSize="11" Cursor="Hand" Padding="6,2"/>
+                    <Button Content="Copy" DockPanel.Dock="Right" Click="btnCopyLog_Click"
+                            Background="Transparent" Foreground="#6C7086" BorderThickness="0"
+                            FontSize="11" Cursor="Hand" Padding="6,2"/>
                 </DockPanel>
                 <ScrollViewer Grid.Row="1" x:Name="logScroller"
                               VerticalScrollBarVisibility="Auto" MinHeight="100">
