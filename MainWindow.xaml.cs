@@ -209,8 +209,8 @@ namespace MonitorToDeckLink
                     // Re-enumerate DeckLink on this STA thread to get proper apartment-local RCW
                     Log("Re-enumerating DeckLink on STA thread...");
                     var iter2 = (IDeckLinkIterator2)new CDeckLinkIterator2();
-                    IDeckLinkOutput2? deckOutput = null;
                     int idx = 0;
+                    bool started = false;
                     while (true)
                     {
                         int hr = iter2.Next(out IDeckLink2 dev);
@@ -227,24 +227,23 @@ namespace MonitorToDeckLink
                             Log($"QI IDeckLinkOutput: hr=0x{qiHr:X8} ptr=0x{outPtr:X}");
                             if (qiHr == 0 && outPtr != IntPtr.Zero)
                             {
-                                deckOutput = (IDeckLinkOutput2)Marshal.GetObjectForIUnknown(outPtr);
+                                // Keep outPtr alive - pass directly to CaptureLoop as raw vtable ptr
+                                // Do NOT wrap in RCW - that's what causes the crash
+                                Log($"Raw IDeckLinkOutput ptr: 0x{outPtr:X}");
+                                Log("Starting capture loop...");
+                                CaptureLoop(monitor, outPtr, format, token);
                                 Marshal.Release(outPtr);
                             }
+                            else
+                            {
+                                throw new Exception($"QI IDeckLinkOutput failed: 0x{qiHr:X8}");
+                            }
+                            started = true;
                             break;
                         }
                         idx++;
                     }
-                    if (deckOutput == null) throw new Exception("Could not get IDeckLinkOutput on STA thread.");
-                    // Get raw ptr BEFORE GetObjectForIUnknown wraps it in RCW
-                    // We already have outPtr from above - but it was Released. Re-QI:
-                    IntPtr iunk2 = Marshal.GetIUnknownForObject(deckOutput);
-                    Guid og2 = new Guid("1A8077F1-9FE2-4533-8147-2294305E253F");
-                    Marshal.QueryInterface(iunk2, ref og2, out IntPtr rawOutputPtr);
-                    Marshal.Release(iunk2);
-                    Log($"Raw output ptr for vtable: 0x{rawOutputPtr:X}");
-                    Log("Starting capture loop...");
-                    CaptureLoop(monitor, rawOutputPtr, format, token);
-                    Marshal.Release(rawOutputPtr);
+                    if (!started) throw new Exception("Could not get IDeckLinkOutput on STA thread.");
                     tcs.SetResult(true);
                 }
                 catch (Exception ex) { tcs.SetException(ex); }
