@@ -61,9 +61,9 @@ namespace MonitorToDeckLink
         public int DisableVideoOutput() =>
             Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vt[8])(_ptr);
 
-        // Modern SDK slot 10
+        // Try slot 9 - vtable shows [10] < [09] suggesting different ordering
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
-            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[10])(_ptr, w, h, rb, fmt, flags, out frame);
+            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
 
         // IDeckLinkVideoFrame::GetBytes at slot 8 of the frame's own vtable
         public void GetFrameBytes(IntPtr frame, out IntPtr bytes)
