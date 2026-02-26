@@ -130,22 +130,24 @@ namespace MonitorToDeckLink
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale, System.Action<string> log)
         {
-            // ScheduleVideoFrame expects an IDeckLinkVideoFrame interface pointer.
-            // QI the raw frame ptr for IDeckLinkVideoFrame (3F716FE0-F023-4111-BE5D-EF4414C05B17)
-            Guid frameGuid = new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17");
-            int qiHr = Marshal.QueryInterface(frame, ref frameGuid, out IntPtr frameIface);
-            if (time == 0) log($"QI IDeckLinkVideoFrame hr=0x{qiHr:X8} ptr=0x{frameIface:X}");
-
-            IntPtr frameArg = (qiHr == 0 && frameIface != IntPtr.Zero) ? frameIface : frame;
-
-            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frameArg, time, dur, scale);
-            if (time == 0) log($"ScheduleVideoFrame slot[13] hr=0x{hr:X8}");
-
-            if (qiHr == 0 && frameIface != IntPtr.Zero)
-                Marshal.Release(frameIface);
-
-            return hr;
+            bool verbose = (time < dur * 2);
+            if (verbose) log($"ScheduleVideoFrame: time={time} dur={dur} scale={scale} frame=0x{frame:X}");
+            // The raw ptr from CreateVideoFrame IS IDeckLinkVideoFrame already - pass directly
+            // Probe all slots on first call
+            if (time == 0)
+            {
+                for (int s = 11; s <= 16; s++)
+                {
+                    int thr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[s])(_ptr, frame, time, dur, scale);
+                    log($"  slot[{s}] hr=0x{thr:X8}");
+                    if (thr == 0) { _schedSlot = s; log($"  -> using slot {s}"); return 0; }
+                }
+                log("  ERROR: no slot accepted ScheduleVideoFrame");
+                return -1;
+            }
+            return Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[_schedSlot])(_ptr, frame, time, dur, scale);
         }
+        private int _schedSlot = 13;
 
         // Modern SDK slot 14
         public int GetBufferedVideoFrameCount(out uint count) =>
