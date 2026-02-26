@@ -276,18 +276,13 @@ namespace MonitorToDeckLink
 
             Log($"Enabling DeckLink video output: {format.Label} ({format.Width}x{format.Height})");
 
-            // Get IDeckLinkOutput via the IDeckLink interface pointer
-            // GetIUnknownForObject gives us IUnknown; we need the IDeckLink IUnknown specifically
-            Guid deckLinkIfGuid = typeof(IDeckLink).GUID;
-            Guid outputGuid     = typeof(IDeckLinkOutput).GUID;
-            Log($"IDeckLink GUID: {deckLinkIfGuid}");
-            Log($"IDeckLinkOutput GUID: {outputGuid}");
-
-            // Get the IDeckLink interface pointer first, then QI from that
-            IntPtr deckLinkIfPtr = Marshal.GetComInterfaceForObject(deckLink, typeof(IDeckLink));
-            Log($"IDeckLink ptr: 0x{deckLinkIfPtr:X}");
-            int qiHr = Marshal.QueryInterface(deckLinkIfPtr, ref outputGuid, out IntPtr outputPtr);
-            Marshal.Release(deckLinkIfPtr);
+            // Use raw IUnknown QI with hardcoded GUID - avoids RCW type identity issues with tlbimp
+            // IDeckLinkOutput GUID from DeckLink SDK: 1A8077F1-9FE2-4533-8147-2294305E253F
+            Guid outputGuid = new Guid("1A8077F1-9FE2-4533-8147-2294305E253F");
+            Log($"Querying IDeckLinkOutput via raw IUnknown (GUID: {outputGuid})...");
+            IntPtr iunkPtr = Marshal.GetIUnknownForObject(deckLink);
+            int qiHr = Marshal.QueryInterface(iunkPtr, ref outputGuid, out IntPtr outputPtr);
+            Marshal.Release(iunkPtr);
             Log($"QueryInterface result: 0x{qiHr:X8}  outPtr: 0x{outputPtr:X}");
             if (qiHr != 0 || outputPtr == IntPtr.Zero)
                 throw new Exception($"QueryInterface for IDeckLinkOutput failed: 0x{qiHr:X8}. Device may not support video output.");
