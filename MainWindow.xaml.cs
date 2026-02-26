@@ -189,20 +189,6 @@ namespace MonitorToDeckLink
             if (cmbDeckLinks.SelectedItem is not DeckLinkDeviceInfo dlInfo) { SetStatus("Select a DeckLink device.", true); return; }
             if (cmbFormats.SelectedItem is not OutputFormatInfo format)     { SetStatus("Select a format.", true); return; }
 
-            // QI for IDeckLinkOutput2 on the UI thread (STA)
-            IDeckLinkOutput2? deckOutput = null;
-            try
-            {
-                deckOutput = (IDeckLinkOutput2)dlInfo.Device;
-                Log($"Got IDeckLinkOutput2 for {dlInfo.Name}");
-            }
-            catch (Exception ex)
-            {
-                Log($"QI for IDeckLinkOutput2 failed: {ex.Message}");
-                SetStatus("Device does not support output.", true);
-                return;
-            }
-
             btnStart.IsEnabled = false;
             btnStop.IsEnabled = true;
             SetStatus($"Starting: {monitor.Name} → {dlInfo.Name} @ {format.Label}");
@@ -210,7 +196,30 @@ namespace MonitorToDeckLink
 
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
-            _captureTask = Task.Run(() => CaptureLoop(monitor, deckOutput, format, token), token);
+            var device = dlInfo.Device; // capture ref for STA thread
+
+            // DeckLink COM objects must be used on the same STA thread they were created on
+            // So we create a fresh STA thread and do the QI + all COM calls there
+            var tcs = new TaskCompletionSource<bool>();
+            var staThread = new Thread(() =>
+            {
+                IDeckLinkOutput2? deckOutput = null;
+                try
+                {
+                    // QI on the STA thread that will use it
+                    deckOutput = (IDeckLinkOutput2)device;
+                    Log($"Got IDeckLinkOutput2 on STA thread");
+                    CaptureLoop(monitor, deckOutput, format, token);
+                    tcs.SetResult(true);
+                }
+                catch (Exception ex) { tcs.SetException(ex); }
+            });
+            staThread.SetApartmentState(ApartmentState.STA);
+            staThread.IsBackground = true;
+            staThread.Name = "DeckLinkCapture";
+            staThread.Start();
+            _captureTask = tcs.Task;
+
             _captureTask.ContinueWith(t => Dispatcher.Invoke(() =>
             {
                 btnStart.IsEnabled = true;
