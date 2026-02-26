@@ -105,6 +105,8 @@ namespace MonitorToDeckLink
             return sb.ToString();
         }
 
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int DisplayVideoFrameSyncDel(IntPtr self, IntPtr frame);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int SetCallbackDel(IntPtr self, IntPtr callback);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartAccessDel(IntPtr self, int accessType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int EndAccessDel(IntPtr self, int accessType);
 
@@ -204,6 +206,29 @@ namespace MonitorToDeckLink
             Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[16])(_ptr, stop, out _, scale);
             return 0;
         }
+
+        // Register null completion callback to allow scheduling
+        // Slot 14 = SetScheduledFrameCompletionCallback in modern SDK
+        public int SetFrameCompletionCallback(int slot = 14)
+        {
+            // Pass NULL pointer - this disables callback requirement
+            return Marshal.GetDelegateForFunctionPointer<SetCallbackDel>((IntPtr)_vt[slot])(_ptr, IntPtr.Zero);
+        }
+
+        // DisplayVideoFrameSync - synchronous output, no scheduling needed
+        // Find its slot by probing
+        public int DisplayVideoFrameSync(IntPtr frame, System.Action<string> log)
+        {
+            for (int s = 17; s <= 22; s++)
+            {
+                int hr = Marshal.GetDelegateForFunctionPointer<DisplayVideoFrameSyncDel>((IntPtr)_vt[s])(_ptr, frame);
+                log($"DisplayVideoFrameSync slot[{s}] hr=0x{hr:X8}");
+                if (hr == 0) { _displaySyncSlot = s; return 0; }
+                if (_displaySyncSlot == s) return hr; // already found, just failed
+            }
+            return -1;
+        }
+        private int _displaySyncSlot = 17;
 
         public string DumpVtable()
         {

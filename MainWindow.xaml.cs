@@ -332,6 +332,10 @@ namespace MonitorToDeckLink
             long tsScale = (long)Math.Round(format.FrameRate * 1000);
             long tsDur   = 1000;
 
+            // Try registering null completion callback to enable scheduling
+            int cbHr = deckOutput.SetFrameCompletionCallback(14);
+            Log($"SetScheduledFrameCompletionCallback(null) slot[14] hr=0x{cbHr:X8}");
+
             Log("Entering capture loop...");
             Log("Waiting for first frame from DXGI...");
             while (!ct.IsCancellationRequested)
