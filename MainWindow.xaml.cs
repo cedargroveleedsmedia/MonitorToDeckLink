@@ -276,12 +276,19 @@ namespace MonitorToDeckLink
 
             Log($"Enabling DeckLink video output: {format.Label} ({format.Width}x{format.Height})");
 
-            // Direct cast fails with tlbimp - use Marshal.QueryInterface instead
-            Guid outputGuid = typeof(IDeckLinkOutput).GUID;
-            Log($"Querying IDeckLinkOutput (GUID: {outputGuid})...");
-            IntPtr deckLinkPtr = Marshal.GetIUnknownForObject(deckLink);
-            int qiHr = Marshal.QueryInterface(deckLinkPtr, ref outputGuid, out IntPtr outputPtr);
-            Marshal.Release(deckLinkPtr);
+            // Get IDeckLinkOutput via the IDeckLink interface pointer
+            // GetIUnknownForObject gives us IUnknown; we need the IDeckLink IUnknown specifically
+            Guid deckLinkIfGuid = typeof(IDeckLink).GUID;
+            Guid outputGuid     = typeof(IDeckLinkOutput).GUID;
+            Log($"IDeckLink GUID: {deckLinkIfGuid}");
+            Log($"IDeckLinkOutput GUID: {outputGuid}");
+
+            // Get the IDeckLink interface pointer first, then QI from that
+            IntPtr deckLinkIfPtr = Marshal.GetComInterfaceForObject(deckLink, typeof(IDeckLink));
+            Log($"IDeckLink ptr: 0x{deckLinkIfPtr:X}");
+            int qiHr = Marshal.QueryInterface(deckLinkIfPtr, ref outputGuid, out IntPtr outputPtr);
+            Marshal.Release(deckLinkIfPtr);
+            Log($"QueryInterface result: 0x{qiHr:X8}  outPtr: 0x{outputPtr:X}");
             if (qiHr != 0 || outputPtr == IntPtr.Zero)
                 throw new Exception($"QueryInterface for IDeckLinkOutput failed: 0x{qiHr:X8}. Device may not support video output.");
             var deckOutput = (IDeckLinkOutput)Marshal.GetObjectForIUnknown(outputPtr);
