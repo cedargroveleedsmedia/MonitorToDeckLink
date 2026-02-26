@@ -334,14 +334,47 @@ namespace MonitorToDeckLink
             Marshal.Release(outputPtr); // DeckLinkOutputVtable AddRefs internally
             Log($"Vtable entries:\n{deckOutput.VtableDump}");
 
-            Log("Enabling video output...");
-            Log($"Display mode value: 0x{(int)format.Mode:X8} ({(int)format.Mode})");
-            int enableHr;
-            try { enableHr = deckOutput.EnableVideoOutput((int)format.Mode, 0); }
-            catch (Exception ex) { throw new Exception($"EnableVideoOutput threw: {ex.GetType().Name}: {ex.Message}"); }
-            Log($"EnableVideoOutput returned: 0x{enableHr:X8}");
+            Log($"Display mode value: 0x{(int)format.Mode:X8}");
+            // Try vtable slots 5-10 to find EnableVideoOutput
+            // EnableVideoOutput signature: (this, BMDDisplayMode, BMDVideoOutputFlags) -> HRESULT
+            int enableHr = -1;
+            int enableSlot = -1;
+            for (int slot = 5; slot <= 10; slot++)
+            {
+                Log($"Trying EnableVideoOutput at vtable[{slot}]...");
+                try
+                {
+                    enableHr = deckOutput.CallEnableVideoOutput(slot, (int)format.Mode, 0);
+                    Log($"  vtable[{slot}] returned 0x{enableHr:X8}");
+                    // S_OK=0, and some DeckLink errors start with 0x89 or 0x8004
+                    // A crash would throw; a wrong slot returns garbage HRESULT
+                    // Accept if looks like a real HRESULT (top bit set = error, 0 = success)
+                    if (enableHr == 0)
+                    {
+                        enableSlot = slot;
+                        Log($"EnableVideoOutput succeeded at vtable[{slot}]");
+                        break;
+                    }
+                    else if ((uint)enableHr >= 0x80000000 && (uint)enableHr <= 0x8FFFFFFF)
+                    {
+                        // Looks like a real HRESULT error - this is the right slot
+                        enableSlot = slot;
+                        Log($"EnableVideoOutput returned error at vtable[{slot}]: 0x{enableHr:X8}");
+                        break;
+                    }
+                    // Otherwise garbage value - wrong slot, continue
+                    Log($"  vtable[{slot}] returned non-HRESULT garbage, trying next slot");
+                    // Must disable before trying another slot
+                    try { deckOutput.CallDisableVideoOutput(slot + 1); } catch { }
+                }
+                catch (Exception ex)
+                {
+                    Log($"  vtable[{slot}] threw {ex.GetType().Name} - trying next");
+                }
+            }
+            if (enableSlot < 0) throw new Exception("Could not find EnableVideoOutput in vtable slots 5-10");
             if (enableHr != 0) throw new Exception($"EnableVideoOutput failed: 0x{enableHr:X8}");
-            Log("DeckLink video output enabled.");
+            Log($"DeckLink video output enabled via vtable[{enableSlot}].");
 
             long   frameDuration  = (long)(TimeSpan.TicksPerSecond / format.FrameRate);
             double framePeriodMs  = 1000.0 / format.FrameRate;
@@ -544,6 +577,18 @@ namespace MonitorToDeckLink
             VtableDump = sb.ToString();
             var addRef = Marshal.GetDelegateForFunctionPointer<AddRefDel>((IntPtr)_vtable[1]);
             addRef(_ptr);
+        }
+
+        public int CallEnableVideoOutput(int slot, int displayMode, int flags)
+        {
+            var fn = Marshal.GetDelegateForFunctionPointer<EnableVideoOutputDel>((IntPtr)_vtable[slot]);
+            return fn(_ptr, displayMode, flags);
+        }
+
+        public int CallDisableVideoOutput(int slot)
+        {
+            var fn = Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vtable[slot]);
+            return fn(_ptr);
         }
 
         public int EnableVideoOutput(int displayMode, int flags)
