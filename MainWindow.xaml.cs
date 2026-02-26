@@ -232,10 +232,11 @@ namespace MonitorToDeckLink
                             foreach (var (ver, g) in outputGuids)
                             {
                                 var gg = g;
-                                int hr = Marshal.QueryInterface(iunk, ref gg, out IntPtr p);
-                                Log($"QI IDeckLinkOutput {ver}: hr=0x{hr:X8}" + (hr==0 ? $" ptr=0x{p:X}" : ""));
-                                if (hr == 0 && outPtr == IntPtr.Zero) { outPtr = p; qiHr = 0; }
-                                else if (hr == 0) Marshal.Release(p);
+                                int qhr = Marshal.QueryInterface(iunk, ref gg, out IntPtr p);
+                                int hr = qhr;
+                                Log($"QI IDeckLinkOutput {ver}: hr=0x{qhr:X8}" + (qhr==0 ? $" ptr=0x{p:X}" : ""));
+                                if (qhr == 0 && outPtr == IntPtr.Zero) { outPtr = p; qiHr = 0; }
+                                else if (qhr == 0) Marshal.Release(p);
                             }
                             Marshal.Release(iunk);
                             if (qiHr == 0 && outPtr != IntPtr.Zero)
@@ -343,7 +344,6 @@ namespace MonitorToDeckLink
 
             // Pre-buffer frames then start playback
             long tsScale = (long)Math.Round(format.FrameRate * 1000);
-            long tsDur   = 1000;
 
             Log("Entering capture loop...");
             Log("Waiting for first frame from DXGI...");
