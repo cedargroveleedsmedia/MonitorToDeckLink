@@ -276,16 +276,38 @@ namespace MonitorToDeckLink
 
             Log($"Enabling DeckLink video output: {format.Label} ({format.Width}x{format.Height})");
 
-            // Use raw IUnknown QI with hardcoded GUID - avoids RCW type identity issues with tlbimp
-            // IDeckLinkOutput GUID from DeckLink SDK: 1A8077F1-9FE2-4533-8147-2294305E253F
-            Guid outputGuid = new Guid("1A8077F1-9FE2-4533-8147-2294305E253F");
-            Log($"Querying IDeckLinkOutput via raw IUnknown (GUID: {outputGuid})...");
+            // Try all known IDeckLinkOutput GUIDs across SDK versions
+            var outputCandidates = new (string name, string guid)[]
+            {
+                ("IDeckLinkOutput",        "1A8077F1-9FE2-4533-8147-2294305E253F"),
+                ("IDeckLinkOutput_v14_2_1","BE2D9020-461E-442F-84B7-E949CB953B9D"),
+                ("IDeckLinkOutput_v11_4",  "065A0F6C-C508-4D0D-B919-F5EB0EBFC96B"),
+                ("IDeckLinkOutput_v10_11", "CC5C8A6E-3F2F-4B3A-87EA-FD78AF300564"),
+            };
+
             IntPtr iunkPtr = Marshal.GetIUnknownForObject(deckLink);
-            int qiHr = Marshal.QueryInterface(iunkPtr, ref outputGuid, out IntPtr outputPtr);
+            Log($"IUnknown ptr: 0x{iunkPtr:X}");
+
+            IntPtr outputPtr = IntPtr.Zero;
+            string foundOutputName = "";
+            foreach (var (name, guidStr) in outputCandidates)
+            {
+                Guid g = new Guid(guidStr);
+                int hr = Marshal.QueryInterface(iunkPtr, ref g, out IntPtr ptr);
+                Log($"  QI {name}: 0x{hr:X8}  ptr=0x{ptr:X}");
+                if (hr == 0 && ptr != IntPtr.Zero)
+                {
+                    outputPtr = ptr;
+                    foundOutputName = name;
+                    break;
+                }
+            }
             Marshal.Release(iunkPtr);
-            Log($"QueryInterface result: 0x{qiHr:X8}  outPtr: 0x{outputPtr:X}");
-            if (qiHr != 0 || outputPtr == IntPtr.Zero)
-                throw new Exception($"QueryInterface for IDeckLinkOutput failed: 0x{qiHr:X8}. Device may not support video output.");
+
+            if (outputPtr == IntPtr.Zero)
+                throw new Exception("No IDeckLinkOutput interface found on this device. Check device selection.");
+
+            Log($"Acquired {foundOutputName}.");
             var deckOutput = (IDeckLinkOutput)Marshal.GetObjectForIUnknown(outputPtr);
             Marshal.Release(outputPtr);
             Log("IDeckLinkOutput interface acquired.");
