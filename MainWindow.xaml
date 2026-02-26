@@ -1,0 +1,103 @@
+<Window x:Class="MonitorToDeckLink.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Monitor to DeckLink Output"
+        Height="400" Width="520"
+        ResizeMode="CanMinimize"
+        Background="#1E1E2E"
+        Foreground="White"
+        FontFamily="Segoe UI"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
+
+    <Window.Resources>
+        <Style x:Key="LabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style x:Key="ComboStyle" TargetType="ComboBox">
+            <Setter Property="Background" Value="#313244"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#585B70"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style x:Key="ButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="16"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="16"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="16"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Monitor Selection -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="Source Monitor" Style="{StaticResource LabelStyle}"/>
+            <ComboBox x:Name="cmbMonitors" Style="{StaticResource ComboStyle}"
+                      SelectionChanged="cmbMonitors_SelectionChanged"/>
+        </StackPanel>
+
+        <!-- DeckLink Device Selection -->
+        <StackPanel Grid.Row="2">
+            <TextBlock Text="DeckLink Device" Style="{StaticResource LabelStyle}"/>
+            <ComboBox x:Name="cmbDeckLinks" Style="{StaticResource ComboStyle}"
+                      SelectionChanged="cmbDeckLinks_SelectionChanged"/>
+        </StackPanel>
+
+        <!-- Output Format -->
+        <StackPanel Grid.Row="4">
+            <TextBlock Text="Output Format" Style="{StaticResource LabelStyle}"/>
+            <ComboBox x:Name="cmbFormats" Style="{StaticResource ComboStyle}"/>
+        </StackPanel>
+
+        <!-- DeckLink Output Channel (Duo has 2 outputs) -->
+        <StackPanel Grid.Row="6">
+            <TextBlock Text="Output Sub-device (Duo has 2 channels)" Style="{StaticResource LabelStyle}"/>
+            <ComboBox x:Name="cmbOutputChannel" Style="{StaticResource ComboStyle}">
+                <ComboBoxItem Content="Channel 1 (first listed device)" IsSelected="True"/>
+                <ComboBoxItem Content="Channel 2 (second listed device)"/>
+            </ComboBox>
+            <TextBlock Text="ℹ The DeckLink Duo appears as two separate devices in the list above."
+                       Foreground="#6C7086" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Status -->
+        <Border Grid.Row="7" Background="#181825" CornerRadius="6" Margin="0,16,0,0" Padding="12,8">
+            <TextBlock x:Name="txtStatus" Text="Ready. Select a monitor and DeckLink device, then click Start."
+                       Foreground="#A6E3A1" FontSize="12" TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- Buttons -->
+        <Grid Grid.Row="8" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="btnStart" Grid.Column="0" Content="▶  Start Output"
+                    Style="{StaticResource ButtonStyle}"
+                    Background="#A6E3A1" Foreground="#1E1E2E"
+                    Click="btnStart_Click"/>
+            <Button x:Name="btnStop" Grid.Column="2" Content="■  Stop Output"
+                    Style="{StaticResource ButtonStyle}"
+                    Background="#F38BA8" Foreground="#1E1E2E"
+                    IsEnabled="False"
+                    Click="btnStop_Click"/>
+        </Grid>
+    </Grid>
+</Window>
