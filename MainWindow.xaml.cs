@@ -301,8 +301,9 @@ namespace MonitorToDeckLink
                     _BMDFrameFlags.bmdFrameFlagDefault,
                     out IDeckLinkMutableVideoFrame deckFrame);
 
-                // Copy UYVY bytes into DeckLink frame via Marshal
-                deckFrame.GetBytes(out IntPtr deckPtr);
+                // GetBytes is on IDeckLinkVideoBuffer, not IDeckLinkMutableVideoFrame
+                var deckBuffer = (IDeckLinkVideoBuffer)deckFrame;
+                deckBuffer.GetBytes(out IntPtr deckPtr);
                 fixed (byte* src = uyvyBuf)
                     System.Buffer.MemoryCopy(src, (void*)deckPtr, uyvyBuf.Length, uyvyBuf.Length);
 
