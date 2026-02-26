@@ -394,7 +394,7 @@ namespace MonitorToDeckLink
                 if (createHr == 0 && framePtr != IntPtr.Zero)
                 {
                     if (frameNumber == 0) Log("Calling GetFrameBytes...");
-                    deckOutput.GetFrameBytes(framePtr, out IntPtr dst);
+                    deckOutput.GetFrameBytes(framePtr, out IntPtr dst, msg => { if (frameNumber == 0) Log(msg); });
                     if (frameNumber == 0) Log($"GetFrameBytes dst=0x{dst:X}");
                     fixed (byte* src = uyvy)
                         System.Buffer.MemoryCopy(src, (void*)dst, uyvy.Length, uyvy.Length);

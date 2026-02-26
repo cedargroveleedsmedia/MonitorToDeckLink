@@ -42,8 +42,10 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBufferedCountDel(IntPtr self, out uint count);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartPlaybackDel(IntPtr self, long startTime, long scale, double speed);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StopPlaybackDel(IntPtr self, long stopTime, out long actualStop, long scale);
-        // IDeckLinkVideoFrame vtable (modern): [0]QI [1]AddRef [2]Release [3]GetWidth [4]GetHeight [5]GetRowBytes [6]GetPixelFormat [7]GetFlags [8]GetBytes
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBytesDel(IntPtr self, out IntPtr buffer);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetWidthDel(IntPtr self);
+        // Frame vtable dump helper
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint AddRefDel2(IntPtr self);
 
         public DeckLinkOutput(IntPtr ptr)
         {
@@ -65,11 +67,24 @@ namespace MonitorToDeckLink
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
             Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
 
-        // IDeckLinkVideoFrame::GetBytes at slot 8 of the frame's own vtable
-        public void GetFrameBytes(IntPtr frame, out IntPtr bytes)
+        public string DumpFrameVtable(IntPtr frame)
         {
             void** fvt = *(void***)frame;
-            Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[8])(frame, out bytes);
+            var sb = new System.Text.StringBuilder("Frame vtable:\n");
+            for (int i = 0; i < 16; i++)
+                sb.AppendLine($"  [{i:D2}] = 0x{(IntPtr)fvt[i]:X}");
+            return sb.ToString();
+        }
+
+        // IDeckLinkVideoFrame::GetBytes - find correct slot by trying 7,8,9
+        public void GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
+        {
+            void** fvt = *(void***)frame;
+            log(DumpFrameVtable(frame));
+            // Try slot 7 first (older SDK), then 8 (modern)
+            // GetBytes returns HRESULT and outputs a pointer - if slot wrong will crash
+            // Safe approach: try slot 7
+            Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[7])(frame, out bytes);
         }
 
         public void ReleaseFrame(IntPtr frame)
