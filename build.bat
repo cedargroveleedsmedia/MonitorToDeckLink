@@ -21,30 +21,27 @@ if exist "lib\DeckLinkAPI.dll" (
 
 echo [1/4] Generating DeckLink interop DLL...
 
-:: DeckLinkAPI64.dll is the COM server - use it directly with tlbimp
+:: DeckLinkAPI64.dll is the COM server
 set "DECKLINK_DLL=C:\Program Files\Blackmagic Design\Blackmagic Desktop Video\DeckLinkAPI64.dll"
-
 if not exist "%DECKLINK_DLL%" (
-    echo [ERROR] DeckLinkAPI64.dll not found at expected location:
+    echo [ERROR] DeckLinkAPI64.dll not found at:
     echo         %DECKLINK_DLL%
-    echo Please install Blackmagic Desktop Video first.
     pause
     exit /b 1
 )
 echo        Found: %DECKLINK_DLL%
 
-:: Find tlbimp.exe - check Windows SDK and Visual Studio locations
-set "TLBIMP="
-for /f "delims=" %%i in ('dir /s /b "C:\Program Files (x86)\Microsoft SDKs\Windows\*\x64\tlbimp.exe" 2^>nul') do set "TLBIMP=%%i"
-for /f "delims=" %%i in ('dir /s /b "C:\Program Files\Microsoft SDKs\Windows\*\x64\tlbimp.exe" 2^>nul') do set "TLBIMP=%%i"
-for /f "delims=" %%i in ('dir /s /b "C:\Program Files\Microsoft Visual Studio\2022\*\bin\tlbimp.exe" 2^>nul') do set "TLBIMP=%%i"
-for /f "delims=" %%i in ('dir /s /b "C:\Program Files (x86)\Microsoft Visual Studio\2019\*\bin\tlbimp.exe" 2^>nul') do set "TLBIMP=%%i"
+:: Hardcoded known location (with spaces in path)
+set "TLBIMP=C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.7.2 Tools\x64\TlbImp.exe"
 
-if not defined TLBIMP (
-    echo [ERROR] tlbimp.exe not found.
-    echo Please install the Windows SDK:
-    echo   https://developer.microsoft.com/windows/downloads/windows-sdk/
-    echo Or install Visual Studio Community 2022 with any workload.
+if not exist "%TLBIMP%" (
+    :: Fallback: search dynamically
+    set "TLBIMP="
+    for /f "delims=" %%i in ('dir /s /b "C:\Program Files (x86)\Microsoft SDKs\Windows\*.exe" 2^>nul ^| findstr /i "tlbimp"') do set "TLBIMP=%%i"
+)
+
+if not exist "%TLBIMP%" (
+    echo [ERROR] TlbImp.exe not found.
     pause
     exit /b 1
 )
@@ -52,24 +49,11 @@ echo        Using: %TLBIMP%
 
 if not exist "lib" mkdir lib
 
-"%TLBIMP%" "%DECKLINK_DLL%" /out:"lib\DeckLinkAPI.dll" /namespace:DeckLinkAPI /machine:X64 /verbose
+"%TLBIMP%" "%DECKLINK_DLL%" /out:"lib\DeckLinkAPI.dll" /namespace:DeckLinkAPI /machine:X64
 if %errorlevel% neq 0 (
-    echo.
-    echo [INFO] tlbimp on the DLL failed - trying regasm export method...
-    :: Alternative: extract type info via regtlibv12
-    set "REGTLIB="
-    for /f "delims=" %%i in ('dir /s /b "C:\Windows\Microsoft.NET\Framework64\*\regtlibv12.exe" 2^>nul') do set "REGTLIB=%%i"
-    if defined REGTLIB (
-        "%REGTLIB%" "%DECKLINK_DLL%"
-    )
-    :: Try again after registration
-    "%TLBIMP%" "%DECKLINK_DLL%" /out:"lib\DeckLinkAPI.dll" /namespace:DeckLinkAPI /machine:X64
-    if %errorlevel% neq 0 (
-        echo [ERROR] Could not generate interop DLL.
-        echo Please run this script as Administrator and try again.
-        pause
-        exit /b 1
-    )
+    echo [ERROR] Could not generate interop DLL. Try running as Administrator.
+    pause
+    exit /b 1
 )
 echo        Generated: lib\DeckLinkAPI.dll
 
