@@ -275,7 +275,19 @@ namespace MonitorToDeckLink
             Log($"Staging texture created: {monitor.Width}x{monitor.Height}");
 
             Log($"Enabling DeckLink video output: {format.Label} ({format.Width}x{format.Height})");
-            var deckOutput = (IDeckLinkOutput)deckLink;
+
+            // Direct cast fails with tlbimp - use Marshal.QueryInterface instead
+            Guid outputGuid = typeof(IDeckLinkOutput).GUID;
+            Log($"Querying IDeckLinkOutput (GUID: {outputGuid})...");
+            IntPtr deckLinkPtr = Marshal.GetIUnknownForObject(deckLink);
+            int qiHr = Marshal.QueryInterface(deckLinkPtr, ref outputGuid, out IntPtr outputPtr);
+            Marshal.Release(deckLinkPtr);
+            if (qiHr != 0 || outputPtr == IntPtr.Zero)
+                throw new Exception($"QueryInterface for IDeckLinkOutput failed: 0x{qiHr:X8}. Device may not support video output.");
+            var deckOutput = (IDeckLinkOutput)Marshal.GetObjectForIUnknown(outputPtr);
+            Marshal.Release(outputPtr);
+            Log("IDeckLinkOutput interface acquired.");
+
             deckOutput.EnableVideoOutput(format.Mode, _BMDVideoOutputFlags.bmdVideoOutputFlagDefault);
             Log("DeckLink video output enabled.");
 
