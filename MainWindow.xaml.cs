@@ -233,7 +233,6 @@ namespace MonitorToDeckLink
                             {
                                 var gg = g;
                                 int qhr = Marshal.QueryInterface(iunk, ref gg, out IntPtr p);
-                                int hr = qhr;
                                 Log($"QI IDeckLinkOutput {ver}: hr=0x{qhr:X8}" + (qhr==0 ? $" ptr=0x{p:X}" : ""));
                                 if (qhr == 0 && outPtr == IntPtr.Zero) { outPtr = p; qiHr = 0; }
                                 else if (qhr == 0) Marshal.Release(p);
