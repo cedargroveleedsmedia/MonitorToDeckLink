@@ -394,34 +394,26 @@ namespace MonitorToDeckLink
                 else if (lastFrame != null) uyvy = lastFrame;
                 else { frameNumber++; continue; }
 
-                if (frameNumber == 0) Log($"Calling CreateVideoFrame {format.Width}x{format.Height} rb={rowBytes}...");
                 int createHr = deckOutput.CreateVideoFrame(
                     format.Width, format.Height, rowBytes,
                     0x32767975, 0,
-                    out IntPtr framePtr,
-                    frameNumber == 0 ? (System.Action<string>)Log : null);
+                    out IntPtr framePtr);
 
-                if (frameNumber == 0) Log($"CreateVideoFrame result hr=0x{createHr:X8} ptr=0x{framePtr:X}");
+                if (frameNumber == 0) Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
 
                 if (createHr == 0 && framePtr != IntPtr.Zero)
                 {
-                    if (frameNumber == 0) Log("Calling GetFrameBytes...");
-                    deckOutput.GetFrameBytes(framePtr, out IntPtr dst, msg => { if (frameNumber == 0) Log(msg); });
-                    if (frameNumber == 0) Log($"GetFrameBytes dst=0x{dst:X}");
+                    deckOutput.GetFrameBytes(framePtr, out IntPtr dst, msg => Log(msg));
                     if (dst != IntPtr.Zero)
                     {
                         fixed (byte* src = uyvy)
                             System.Buffer.MemoryCopy(src, (void*)dst, uyvy.Length, uyvy.Length);
-                        if (frameNumber == 0) Log("MemoryCopy done.");
                     }
-                    deckOutput.EndFrameAccess(msg => { if (frameNumber == 0) Log(msg); });
-                    if (frameNumber == 0) Log("Calling ScheduleVideoFrame...");
+                    deckOutput.EndFrameAccess();
                     int schedHr = deckOutput.ScheduleVideoFrame(framePtr,
-                        frameNumber * tsDur, tsDur, tsScale,
-                        msg => { if (frameNumber < 2) Log(msg); });
-                    if (frameNumber == 0) Log($"ScheduleVideoFrame hr=0x{schedHr:X8}");
+                        frameNumber * tsDur, tsDur, tsScale);
+                    if (frameNumber < 3) Log($"ScheduleVideoFrame[{frameNumber}] hr=0x{schedHr:X8}");
                     deckOutput.ReleaseFrame(framePtr);
-                    if (frameNumber == 0) Log("Frame 0 complete.");
                 }
                 else if (frameNumber < 3) Log($"CreateVideoFrame hr=0x{createHr:X8}");
 

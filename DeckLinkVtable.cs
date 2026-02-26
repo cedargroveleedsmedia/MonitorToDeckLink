@@ -1,27 +1,38 @@
-// Pure vtable P/Invoke - bypasses RCW entirely
-// Vtable layout from OBS Studio DeckLink SDK (modern Desktop Video 12+):
-//   IUnknown:  [0]=QI  [1]=AddRef  [2]=Release
-//   IDeckLinkOutput (modern):
-//   [3]  DoesSupportVideoMode  (6 params - connection, mode, pixelFmt, convMode, flags, *actualMode, *supported)
-//   [4]  GetDisplayMode
-//   [5]  GetDisplayModeIterator
-//   [6]  SetScreenPreviewCallback
-//   [7]  EnableVideoOutput          <-- slot 7 in modern SDK
-//   [8]  DisableVideoOutput
-//   [9]  SetVideoOutputFrameMemoryAllocator
-//   [10] CreateVideoFrame
-//   [11] SetAncillaryData
-//   [12] SetVideoOutputConversionMode
-//   [13] ScheduleVideoFrame
-//   [14] GetBufferedVideoFrameCount
-//   [15] StartScheduledPlayback
-//   [16] StopScheduledPlayback
-//   [17] IsScheduledPlaybackRunning
-//   [18] GetScheduledStreamTime
-//   [19] GetReferenceStatus
-//   [20] EnableAudioOutput
-//   [21] DisableAudioOutput
-//   ...
+// Pure vtable P/Invoke - Desktop Video SDK 15.x layout
+// Confirmed from sdk-doc.blackmagicdesign.com section 2.5.3 method order:
+//
+// IUnknown: [0]=QI [1]=AddRef [2]=Release
+// IDeckLinkOutput:
+// [3]  DoesSupportVideoMode
+// [4]  GetDisplayMode
+// [5]  GetDisplayModeIterator
+// [6]  SetScreenPreviewCallback
+// [7]  EnableVideoOutput          *** CONFIRMED WORKING ***
+// [8]  DisableVideoOutput
+// [9]  CreateVideoFrame           *** CONFIRMED WORKING ***
+// [10] CreateVideoFrameWithBuffer  (NEW in 15.x)
+// [11] RowBytesForPixelFormat      (NEW in 15.x)
+// [12] CreateAncillaryData         (NEW in 15.x)
+// [13] DisplayVideoFrameSync
+// [14] ScheduleVideoFrame
+// [15] SetScheduledFrameCompletionCallback
+// [16] GetBufferedVideoFrameCount
+// [17] EnableAudioOutput
+// [18] DisableAudioOutput
+// [19] WriteAudioSamplesSync
+// [20] BeginAudioPreroll
+// [21] EndAudioPreroll
+// [22] ScheduleAudioSamples
+// [23] GetBufferedAudioSampleFrameCount
+// [24] FlushBufferedAudioSamples
+// [25] SetAudioCallback
+// [26] StartScheduledPlayback
+// [27] StopScheduledPlayback
+// [28] IsScheduledPlaybackRunning
+// [29] GetScheduledStreamTime
+// [30] GetReferenceStatus
+// [31] GetHardwareReferenceClock
+// [32] GetFrameCompletionReferenceTimestamp
 
 using System;
 using System.Runtime.InteropServices;
@@ -33,108 +44,68 @@ namespace MonitorToDeckLink
         private IntPtr _ptr;
         private void** _vt;
 
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint AddRefDel(IntPtr self);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint ReleaseDel(IntPtr self);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint AddRefDel(IntPtr self);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int EnableVideoOutputDel(IntPtr self, int mode, int flags);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int DisableVideoOutputDel(IntPtr self);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int CreateVideoFrameDel(IntPtr self, int w, int h, int rb, int fmt, int flags, out IntPtr frame);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int DisplayVideoFrameSyncDel(IntPtr self, IntPtr frame);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int ScheduleVideoFrameDel(IntPtr self, IntPtr frame, long time, long dur, long scale);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBufferedCountDel(IntPtr self, out uint count);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartPlaybackDel(IntPtr self, long startTime, long scale, double speed);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StopPlaybackDel(IntPtr self, long stopTime, out long actualStop, long scale);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBytesDel(IntPtr self, out IntPtr buffer);
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetWidthDel(IntPtr self);
-        // Frame vtable dump helper
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint AddRefDel2(IntPtr self);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartAccessDel(IntPtr self, int accessType);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int EndAccessDel(IntPtr self, int accessType);
+
+        const int bmdBufferAccessWrite = 2;
 
         public DeckLinkOutput(IntPtr ptr)
         {
             _ptr = ptr;
             _vt  = *(void***)ptr;
-            var ar = Marshal.GetDelegateForFunctionPointer<AddRefDel>((IntPtr)_vt[1]);
-            ar(_ptr);
+            Marshal.GetDelegateForFunctionPointer<AddRefDel>((IntPtr)_vt[1])(_ptr);
         }
 
-        // Modern SDK slot 7
         public int EnableVideoOutput(int mode, int flags) =>
             Marshal.GetDelegateForFunctionPointer<EnableVideoOutputDel>((IntPtr)_vt[7])(_ptr, mode, flags);
 
-        // Modern SDK slot 8
         public int DisableVideoOutput() =>
             Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vt[8])(_ptr);
 
-        private int _createSlot = -1;
+        public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
+            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
 
-        public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame, System.Action<string>? log = null)
+        // DisplayVideoFrameSync - simpler than scheduled, use as fallback
+        public int DisplayVideoFrameSync(IntPtr frame) =>
+            Marshal.GetDelegateForFunctionPointer<DisplayVideoFrameSyncDel>((IntPtr)_vt[13])(_ptr, frame);
+
+        public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
+            Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
+
+        public int GetBufferedVideoFrameCount(out uint count) =>
+            Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[16])(_ptr, out count);
+
+        public int StartScheduledPlayback(long start, long scale, double speed) =>
+            Marshal.GetDelegateForFunctionPointer<StartPlaybackDel>((IntPtr)_vt[26])(_ptr, start, scale, speed);
+
+        public int StopScheduledPlayback(long stop, long scale)
         {
-            if (_createSlot >= 0)
-                return Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[_createSlot])(_ptr, w, h, rb, fmt, flags, out frame);
-
-            // Probe slots 8-12 to find CreateVideoFrame
-            for (int s = 8; s <= 12; s++)
-            {
-                frame = IntPtr.Zero;
-                int hr = Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[s])(_ptr, w, h, rb, fmt, flags, out frame);
-                log?.Invoke($"CreateVideoFrame slot[{s}] hr=0x{hr:X8} ptr=0x{frame:X}");
-                if (hr == 0 && frame != IntPtr.Zero)
-                {
-                    // Verify it's a real COM object by trying QI for IUnknown
-                    Guid iunkGuid = new Guid("00000000-0000-0000-C000-000000000046");
-                    int qiHr = Marshal.QueryInterface(frame, ref iunkGuid, out IntPtr iunkPtr);
-                    log?.Invoke($"  QI IUnknown: hr=0x{qiHr:X8}");
-                    if (qiHr == 0 && iunkPtr != IntPtr.Zero)
-                    {
-                        Marshal.Release(iunkPtr);
-                        _createSlot = s;
-                        log?.Invoke($"  -> using slot {s} for CreateVideoFrame");
-                        return 0;
-                    }
-                    // Not a COM object - release whatever it returned
-                }
-            }
-            frame = IntPtr.Zero;
-            return -1;
+            Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out _, scale);
+            return 0;
         }
 
-        public string DumpFrameVtable(IntPtr frame)
-        {
-            void** fvt = *(void***)frame;
-            var sb = new System.Text.StringBuilder("Frame vtable:\n");
-            for (int i = 0; i < 16; i++)
-                sb.AppendLine($"  [{i:D2}] = 0x{(IntPtr)fvt[i]:X}");
-            return sb.ToString();
-        }
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int DisplayVideoFrameSyncDel(IntPtr self, IntPtr frame);
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int SetCallbackDel(IntPtr self, IntPtr callback);
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartAccessDel(IntPtr self, int accessType);
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int EndAccessDel(IntPtr self, int accessType);
-
-        // bmdBufferAccessRead=1, bmdBufferAccessWrite=2
-        const int bmdBufferAccessWrite = 2;
-
+        // IDeckLinkVideoBuffer access for GetBytes
         public void GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
         {
             bytes = IntPtr.Zero;
             Guid bufGuid = new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE");
             int qiHr = Marshal.QueryInterface(frame, ref bufGuid, out IntPtr bufPtr);
-            if (qiHr != 0 || bufPtr == IntPtr.Zero)
-            {
-                log($"QI IDeckLinkVideoBuffer failed: 0x{qiHr:X8}");
-                return;
-            }
+            if (qiHr != 0 || bufPtr == IntPtr.Zero) { log($"QI IDeckLinkVideoBuffer failed: 0x{qiHr:X8}"); return; }
             void** bvt = *(void***)bufPtr;
-            // IDeckLinkVideoBuffer: [0]QI [1]AddRef [2]Release [3]GetBytes [4]StartAccess [5]EndAccess
-            // Must call StartAccess before GetBytes
-            int saHr = Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(bufPtr, bmdBufferAccessWrite);
-            log($"StartAccess hr=0x{saHr:X8}");
-            if (saHr == 0)
-            {
-                int hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
-                log($"GetBytes hr=0x{hr:X8} bytes=0x{bytes:X}");
-            }
-            // EndAccess is called after we are done writing (in WriteFrameBytes)
-            // Store bufPtr for EndAccess - caller must call EndFrameAccess
+            // [3]=GetBytes [4]=StartAccess [5]=EndAccess
+            Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(bufPtr, bmdBufferAccessWrite);
+            Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
             _lastBufPtr = bufPtr;
             _lastBufVt  = bvt;
         }
@@ -142,12 +113,11 @@ namespace MonitorToDeckLink
         private IntPtr _lastBufPtr;
         private void** _lastBufVt;
 
-        public void EndFrameAccess(System.Action<string> log)
+        public void EndFrameAccess(System.Action<string>? log = null)
         {
             if (_lastBufPtr != IntPtr.Zero)
             {
-                int hr = Marshal.GetDelegateForFunctionPointer<EndAccessDel>((IntPtr)_lastBufVt[5])(_lastBufPtr, bmdBufferAccessWrite);
-                log($"EndAccess hr=0x{hr:X8}");
+                Marshal.GetDelegateForFunctionPointer<EndAccessDel>((IntPtr)_lastBufVt[5])(_lastBufPtr, bmdBufferAccessWrite);
                 Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)_lastBufVt[2])(_lastBufPtr);
                 _lastBufPtr = IntPtr.Zero;
             }
@@ -159,75 +129,10 @@ namespace MonitorToDeckLink
             Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)fvt[2])(frame);
         }
 
-        private int _schedSlot = -1;
-
-        public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale, System.Action<string> log)
-        {
-            bool verbose = (time < dur * 2);
-
-            if (_schedSlot < 0)
-            {
-                // Probe every slot to find ScheduleVideoFrame
-                // It returns S_OK when given a valid frame, valid time params
-                // E_ACCESSDENIED or E_INVALIDARG indicates wrong slot or wrong state
-                // S_OK = found it
-                for (int s = 10; s <= 18; s++)
-                {
-                    int thr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[s])(_ptr, frame, time, dur, scale);
-                    log($"ScheduleVideoFrame slot[{s}] hr=0x{thr:X8}");
-                    if (thr == 0) { _schedSlot = s; log($"-> found ScheduleVideoFrame at slot {s}"); return 0; }
-                }
-                // None worked - use slot 13 as default
-                _schedSlot = 13;
-                log("WARNING: no slot returned S_OK for ScheduleVideoFrame");
-                return -1;
-            }
-
-            return Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[_schedSlot])(_ptr, frame, time, dur, scale);
-        }
-
-        // Modern SDK slot 14
-        public int GetBufferedVideoFrameCount(out uint count) =>
-            Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[14])(_ptr, out count);
-
-        // Modern SDK slot 15
-        public int StartScheduledPlayback(long start, long scale, double speed) =>
-            Marshal.GetDelegateForFunctionPointer<StartPlaybackDel>((IntPtr)_vt[15])(_ptr, start, scale, speed);
-
-        // Modern SDK slot 16
-        public int StopScheduledPlayback(long stop, long scale)
-        {
-            Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[16])(_ptr, stop, out _, scale);
-            return 0;
-        }
-
-        // Register null completion callback to allow scheduling
-        // Slot 14 = SetScheduledFrameCompletionCallback in modern SDK
-        public int SetFrameCompletionCallback(int slot = 14)
-        {
-            // Pass NULL pointer - this disables callback requirement
-            return Marshal.GetDelegateForFunctionPointer<SetCallbackDel>((IntPtr)_vt[slot])(_ptr, IntPtr.Zero);
-        }
-
-        // DisplayVideoFrameSync - synchronous output, no scheduling needed
-        // Find its slot by probing
-        public int DisplayVideoFrameSync(IntPtr frame, System.Action<string> log)
-        {
-            for (int s = 17; s <= 22; s++)
-            {
-                int hr = Marshal.GetDelegateForFunctionPointer<DisplayVideoFrameSyncDel>((IntPtr)_vt[s])(_ptr, frame);
-                log($"DisplayVideoFrameSync slot[{s}] hr=0x{hr:X8}");
-                if (hr == 0) { _displaySyncSlot = s; return 0; }
-                if (_displaySyncSlot == s) return hr; // already found, just failed
-            }
-            return -1;
-        }
-        private int _displaySyncSlot = 17;
-
         public string DumpVtable()
         {
             var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < 22; i++)
+            for (int i = 0; i < 28; i++)
                 sb.AppendLine($"  [{i:D2}] = 0x{(IntPtr)_vt[i]:X}");
             return sb.ToString();
         }
