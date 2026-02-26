@@ -76,19 +76,33 @@ namespace MonitorToDeckLink
             return sb.ToString();
         }
 
-        // Standard IDeckLinkVideoFrame layout:
-        // [3]=GetWidth [4]=GetHeight [5]=GetRowBytes [6]=GetPixelFormat [7]=GetFlags [8]=GetBytes
+        // QI the frame for IDeckLinkVideoBuffer (CCB4B64A) then call GetBytes at slot 3
+        // This avoids depending on IDeckLinkVideoFrame vtable layout entirely
         public void GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
         {
-            void** fvt = *(void***)frame;
-            // Try slot 8 (standard position for GetBytes)
-            int hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[8])(frame, out bytes);
-            log($"GetBytes slot[8] hr=0x{hr:X8} bytes=0x{bytes:X}");
-            if (bytes == IntPtr.Zero)
+            bytes = IntPtr.Zero;
+            // Try IDeckLinkVideoBuffer QI first
+            Guid bufGuid = new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE");
+            int qiHr = Marshal.QueryInterface(frame, ref bufGuid, out IntPtr bufPtr);
+            log($"QI IDeckLinkVideoBuffer: hr=0x{qiHr:X8} ptr=0x{bufPtr:X}");
+            if (qiHr == 0 && bufPtr != IntPtr.Zero)
             {
-                // Try slot 6 (some SDK versions)
-                hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[6])(frame, out bytes);
-                log($"GetBytes slot[6] hr=0x{hr:X8} bytes=0x{bytes:X}");
+                void** bvt = *(void***)bufPtr;
+                log($"Buffer vtable [3]=0x{(IntPtr)bvt[3]:X} [4]=0x{(IntPtr)bvt[4]:X} [5]=0x{(IntPtr)bvt[5]:X}");
+                // IDeckLinkVideoBuffer: [0]QI [1]AddRef [2]Release [3]GetBytes [4]StartAccess [5]EndAccess
+                int hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
+                log($"IDeckLinkVideoBuffer::GetBytes hr=0x{hr:X8} bytes=0x{bytes:X}");
+                // Release buffer interface
+                Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)bvt[2])(bufPtr);
+                return;
+            }
+            // Fallback: try direct frame vtable slots
+            void** fvt = *(void***)frame;
+            for (int slot = 6; slot <= 9; slot++)
+            {
+                int hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[slot])(frame, out bytes);
+                log($"Frame slot[{slot}] hr=0x{hr:X8} bytes=0x{bytes:X}");
+                if (bytes != IntPtr.Zero) return;
             }
         }
 
