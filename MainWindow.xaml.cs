@@ -366,8 +366,10 @@ namespace MonitorToDeckLink
 
                 if (got)
                 {
+                    if (frameNumber == 0) Log("MapSubresource...");
                     var mapped = d3dDevice.ImmediateContext.MapSubresource(
                         stagingTex, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
+                    if (frameNumber == 0) Log($"Mapped ptr=0x{mapped.DataPointer:X} pitch={mapped.RowPitch}");
                     try
                     {
                         fixed (byte* dst = uyvy)
@@ -375,6 +377,7 @@ namespace MonitorToDeckLink
                                 monitor.Width, monitor.Height, dst, format.Width, format.Height);
                     }
                     finally { d3dDevice.ImmediateContext.UnmapSubresource(stagingTex, 0); }
+                    if (frameNumber == 0) Log("BgraToUyvy done.");
                     lastFrame = uyvy;
                 }
                 else if (lastFrame != null) uyvy = lastFrame;
