@@ -219,12 +219,25 @@ namespace MonitorToDeckLink
                         {
                             dev.GetDisplayName(out string n);
                             Log($"STA thread got device: {n}");
-                            // Use Marshal.QueryInterface with raw pointer for reliable QI
+                            // Try multiple IDeckLinkOutput GUIDs to find the one matching Desktop Video 15.1
                             IntPtr iunk = Marshal.GetIUnknownForObject(dev);
-                            Guid outputGuid = new Guid("1A8077F1-9FE2-4533-8147-2294305E253F");
-                            int qiHr = Marshal.QueryInterface(iunk, ref outputGuid, out IntPtr outPtr);
+                            // GUIDs from different SDK versions
+                            var outputGuids = new (string ver, Guid g)[] {
+                                ("v15.x/current", new Guid("CC5C8A6E-3F2F-4B3A-87EA-FD78AF300564")),
+                                ("v14_2_1",       new Guid("1A8077F1-9FE2-4533-8147-2294305E253F")),
+                                ("v10.8/old",     new Guid("A3EF0963-0862-44ED-92A9-EE89ABF431C7")),
+                            };
+                            IntPtr outPtr = IntPtr.Zero;
+                            int qiHr = -1;
+                            foreach (var (ver, g) in outputGuids)
+                            {
+                                var gg = g;
+                                int hr = Marshal.QueryInterface(iunk, ref gg, out IntPtr p);
+                                Log($"QI IDeckLinkOutput {ver}: hr=0x{hr:X8}" + (hr==0 ? $" ptr=0x{p:X}" : ""));
+                                if (hr == 0 && outPtr == IntPtr.Zero) { outPtr = p; qiHr = 0; }
+                                else if (hr == 0) Marshal.Release(p);
+                            }
                             Marshal.Release(iunk);
-                            Log($"QI IDeckLinkOutput: hr=0x{qiHr:X8} ptr=0x{outPtr:X}");
                             if (qiHr == 0 && outPtr != IntPtr.Zero)
                             {
                                 // Keep outPtr alive - pass directly to CaptureLoop as raw vtable ptr
@@ -399,30 +412,7 @@ namespace MonitorToDeckLink
                     0x32767975, 0,
                     out IntPtr framePtr);
 
-                if (frameNumber == 0)
-                {
-                    Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
-                    if (framePtr != IntPtr.Zero)
-                    {
-                        // Try a range of known DeckLink frame GUIDs to find which SDK version matches
-                        var guids = new (string name, Guid g)[] {
-                            ("IUnknown",                    new Guid("00000000-0000-0000-C000-000000000046")),
-                            ("IDeckLinkVideoFrame old",     new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17")),
-                            ("IDeckLinkMutableVideoFrame",  new Guid("69E2639F-40DA-4E19-B6F2-20ACE815C390")),
-                            ("IDeckLinkVideoBuffer",        new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE")),
-                            // Newer GUIDs from SDK 14+
-                            ("IDeckLinkVideoFrame2",        new Guid("CE2B3882-3A0A-4B2B-8D32-B3E81B4641EF")),
-                            ("IDeckLinkMutableVideoFrame2", new Guid("C7B86174-874A-4204-9372-2CF1E1686648")),
-                        };
-                        foreach (var (name, g) in guids)
-                        {
-                            var gg = g;
-                            int hr = Marshal.QueryInterface(framePtr, ref gg, out IntPtr p);
-                            Log($"  QI {name}: hr=0x{hr:X8}" + (hr==0 ? $" ptr=0x{p:X}" : ""));
-                            if (hr == 0) Marshal.Release(p);
-                        }
-                    }
-                }
+                if (frameNumber == 0) Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
 
                 if (createHr == 0 && framePtr != IntPtr.Zero)
                 {
