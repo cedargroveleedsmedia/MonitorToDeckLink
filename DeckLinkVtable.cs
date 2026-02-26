@@ -76,15 +76,20 @@ namespace MonitorToDeckLink
             return sb.ToString();
         }
 
-        // IDeckLinkVideoFrame::GetBytes - find correct slot by trying 7,8,9
+        // Standard IDeckLinkVideoFrame layout:
+        // [3]=GetWidth [4]=GetHeight [5]=GetRowBytes [6]=GetPixelFormat [7]=GetFlags [8]=GetBytes
         public void GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
         {
             void** fvt = *(void***)frame;
-            log(DumpFrameVtable(frame));
-            // Try slot 7 first (older SDK), then 8 (modern)
-            // GetBytes returns HRESULT and outputs a pointer - if slot wrong will crash
-            // Safe approach: try slot 7
-            Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[7])(frame, out bytes);
+            // Try slot 8 (standard position for GetBytes)
+            int hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[8])(frame, out bytes);
+            log($"GetBytes slot[8] hr=0x{hr:X8} bytes=0x{bytes:X}");
+            if (bytes == IntPtr.Zero)
+            {
+                // Try slot 6 (some SDK versions)
+                hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[6])(frame, out bytes);
+                log($"GetBytes slot[6] hr=0x{hr:X8} bytes=0x{bytes:X}");
+            }
         }
 
         public void ReleaseFrame(IntPtr frame)
