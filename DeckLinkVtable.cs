@@ -130,16 +130,20 @@ namespace MonitorToDeckLink
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale, System.Action<string> log)
         {
-            log($"ScheduleVideoFrame params: frame=0x{frame:X} time={time} dur={dur} scale={scale}");
-            // Try slot 13 (modern SDK)
-            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frame, time, dur, scale);
-            log($"Slot[13] hr=0x{hr:X8}");
-            if (hr != 0)
-            {
-                // Try slot 12 (older SDK)
-                hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[12])(_ptr, frame, time, dur, scale);
-                log($"Slot[12] hr=0x{hr:X8}");
-            }
+            // ScheduleVideoFrame expects an IDeckLinkVideoFrame interface pointer.
+            // QI the raw frame ptr for IDeckLinkVideoFrame (3F716FE0-F023-4111-BE5D-EF4414C05B17)
+            Guid frameGuid = new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17");
+            int qiHr = Marshal.QueryInterface(frame, ref frameGuid, out IntPtr frameIface);
+            if (time == 0) log($"QI IDeckLinkVideoFrame hr=0x{qiHr:X8} ptr=0x{frameIface:X}");
+
+            IntPtr frameArg = (qiHr == 0 && frameIface != IntPtr.Zero) ? frameIface : frame;
+
+            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frameArg, time, dur, scale);
+            if (time == 0) log($"ScheduleVideoFrame slot[13] hr=0x{hr:X8}");
+
+            if (qiHr == 0 && frameIface != IntPtr.Zero)
+                Marshal.Release(frameIface);
+
             return hr;
         }
 

@@ -328,6 +328,10 @@ namespace MonitorToDeckLink
             byte[]? lastFrame    = null;
             int    timeouts      = 0;
 
+            // Pre-buffer frames then start playback
+            long tsScale = (long)Math.Round(format.FrameRate * 1000);
+            long tsDur   = 1000;
+
             Log("Entering capture loop...");
             Log("Waiting for first frame from DXGI...");
             while (!ct.IsCancellationRequested)
@@ -411,9 +415,6 @@ namespace MonitorToDeckLink
                     }
                     deckOutput.EndFrameAccess(msg => { if (frameNumber == 0) Log(msg); });
                     if (frameNumber == 0) Log("Calling ScheduleVideoFrame...");
-                    // Use 25fps timeScale=25 dur=1 instead of ticks
-                    long tsScale = (long)Math.Round(format.FrameRate * 1000);
-                    long tsDur   = 1000;
                     int schedHr = deckOutput.ScheduleVideoFrame(framePtr,
                         frameNumber * tsDur, tsDur, tsScale,
                         msg => { if (frameNumber < 2) Log(msg); });
@@ -423,16 +424,17 @@ namespace MonitorToDeckLink
                 }
                 else if (frameNumber < 3) Log($"CreateVideoFrame hr=0x{createHr:X8}");
 
-                if (frameNumber == 0)
+                frameNumber++;
+
+                // Start playback after pre-buffering 2 frames
+                if (frameNumber == 2)
                 {
-                    long tsScale = (long)Math.Round(format.FrameRate * 1000);
-                    Log("StartScheduledPlayback...");
+                    Log("StartScheduledPlayback (after pre-buffering)...");
                     int startHr = deckOutput.StartScheduledPlayback(0, tsScale, 1.0);
                     Log($"StartScheduledPlayback hr=0x{startHr:X8}");
-                    if (startHr != 0) throw new Exception($"StartScheduledPlayback failed: 0x{startHr:X8}");
+                    if (startHr != 0) Log($"WARNING: StartScheduledPlayback failed: 0x{startHr:X8}");
                 }
 
-                frameNumber++;
                 if (frameNumber % (long)format.FrameRate == 0)
                 {
                     deckOutput.GetBufferedVideoFrameCount(out uint buf);
@@ -443,8 +445,7 @@ namespace MonitorToDeckLink
             }
 
             Log("Stopping...");
-            long tsScale2 = (long)Math.Round(format.FrameRate * 1000);
-            deckOutput.StopScheduledPlayback(0, tsScale2);
+            deckOutput.StopScheduledPlayback(0, tsScale);
             deckOutput.DisableVideoOutput();
             Log("Done.");
         }
