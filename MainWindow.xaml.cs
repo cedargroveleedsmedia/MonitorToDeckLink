@@ -73,7 +73,23 @@ namespace MonitorToDeckLink
             new() { Label = "2160p 30",     Mode = _BMDDisplayMode.bmdMode4K2160p30,   Width = 3840, Height = 2160, FrameRate = 30 },
         };
 
-        public MainWindow() { InitializeComponent(); }
+        public MainWindow()
+        {
+            InitializeComponent();
+            // Catch any unhandled exceptions including native access violations
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                Log($"UNHANDLED: {e.ExceptionObject}");
+            System.Windows.Application.Current.DispatcherUnhandledException += (s, e) =>
+            {
+                Log($"DISPATCHER UNHANDLED: {e.Exception}");
+                e.Handled = true;
+            };
+            TaskScheduler.UnobservedTaskException += (s, e) =>
+            {
+                Log($"TASK UNHANDLED: {e.Exception}");
+                e.SetObserved();
+            };
+        }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
@@ -326,9 +342,14 @@ namespace MonitorToDeckLink
             Log("IDeckLinkOutput interface acquired. Setting up vtable caller...");
             using var deckOutput = new DeckLinkOutputVtable(outputPtr);
             Marshal.Release(outputPtr); // DeckLinkOutputVtable AddRefs internally
+            Log($"Vtable entries:\n{deckOutput.VtableDump}");
 
             Log("Enabling video output...");
-            int enableHr = deckOutput.EnableVideoOutput((int)format.Mode, 0);
+            Log($"Display mode value: 0x{(int)format.Mode:X8} ({(int)format.Mode})");
+            int enableHr;
+            try { enableHr = deckOutput.EnableVideoOutput((int)format.Mode, 0); }
+            catch (Exception ex) { throw new Exception($"EnableVideoOutput threw: {ex.GetType().Name}: {ex.Message}"); }
+            Log($"EnableVideoOutput returned: 0x{enableHr:X8}");
             if (enableHr != 0) throw new Exception($"EnableVideoOutput failed: 0x{enableHr:X8}");
             Log("DeckLink video output enabled.");
 
@@ -520,11 +541,17 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint AddRefDel(IntPtr self);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint ReleaseDel(IntPtr self);
 
+        public string VtableDump { get; private set; } = "";
+
         public DeckLinkOutputVtable(IntPtr ptr)
         {
             _ptr = ptr;
-            // AddRef to keep alive
             _vtable = *(void***)ptr;
+            // Dump first 20 vtable entries for debugging
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < 20; i++)
+                sb.Append($"  [{i}]=0x{(IntPtr)_vtable[i]:X}\n");
+            VtableDump = sb.ToString();
             var addRef = Marshal.GetDelegateForFunctionPointer<AddRefDel>((IntPtr)_vtable[1]);
             addRef(_ptr);
         }
