@@ -340,11 +340,18 @@ namespace MonitorToDeckLink
                 bool got = false;
                 try
                 {
-                    var hr = deskDupe.TryAcquireNextFrame(0,
-                        out OutputDuplicateFrameInformation fi,
-                        out SharpDX.DXGI.Resource res);
-                    if (frameNumber == 0) Log($"TryAcquireNextFrame hr={hr.Code} res={(res == null ? "null" : "ok")}");
-                    if (hr.Success && res != null)
+                    // Try up to 5 times with 20ms wait to get a frame
+                    SharpDX.DXGI.Resource? res = null;
+                    for (int attempt = 0; attempt < 5 && res == null; attempt++)
+                    {
+                        var hr = deskDupe.TryAcquireNextFrame(20,
+                            out OutputDuplicateFrameInformation fi,
+                            out SharpDX.DXGI.Resource r);
+                        if (hr.Success && r != null) { res = r; }
+                        else if (attempt == 0 && frameNumber < 3)
+                            Log($"TryAcquireNextFrame attempt {attempt}: hr={hr.Code}");
+                    }
+                    if (res != null)
                     {
                         using (res)
                         using (var t = res.QueryInterface<Texture2D>())
