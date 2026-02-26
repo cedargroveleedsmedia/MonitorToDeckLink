@@ -102,6 +102,23 @@ namespace MonitorToDeckLink
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e) => StopCapture();
 
+        private IntPtr GetDeckLinkOutputPtr(IntPtr deckLinkRawPtr)
+        {
+            var candidates = new[] {
+                "1A8077F1-9FE2-4533-8147-2294305E253F",  // IDeckLinkOutput
+                "BE2D9020-461E-442F-84B7-E949CB953B9D",  // IDeckLinkOutput_v14_2_1
+                "065A0F6C-C508-4D0D-B919-F5EB0EBFC96B",  // IDeckLinkOutput_v11_4
+                "CC5C8A6E-3F2F-4B3A-87EA-FD78AF300564",  // IDeckLinkOutput_v10_11
+            };
+            foreach (var g in candidates)
+            {
+                Guid guid = new Guid(g);
+                int hr = Marshal.QueryInterface(deckLinkRawPtr, ref guid, out IntPtr ptr);
+                if (hr == 0 && ptr != IntPtr.Zero) return ptr;
+            }
+            return IntPtr.Zero;
+        }
+
         private void btnClearLog_Click(object sender, RoutedEventArgs e) => txtLog.Text = "";
         private void btnCopyLog_Click(object sender, RoutedEventArgs e)
         {
@@ -217,7 +234,17 @@ namespace MonitorToDeckLink
 
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
-            _captureTask = Task.Run(() => CaptureLoop(monitor, dlInfo, format, token), token);
+            // Capture the raw COM pointer on the UI thread (STA) before switching threads
+            IntPtr rawOutputPtr = GetDeckLinkOutputPtr(dlInfo.RawPtr);
+            Log($"Pre-captured IDeckLinkOutput ptr on UI thread: 0x{rawOutputPtr:X}");
+            if (rawOutputPtr == IntPtr.Zero)
+            {
+                SetStatus("Failed to get DeckLink output interface.", true);
+                btnStart.IsEnabled = true;
+                btnStop.IsEnabled = false;
+                return;
+            }
+            _captureTask = Task.Run(() => CaptureLoop(monitor, rawOutputPtr, format, token), token);
             _captureTask.ContinueWith(t => Dispatcher.Invoke(() =>
             {
                 btnStart.IsEnabled = true;
@@ -250,10 +277,9 @@ namespace MonitorToDeckLink
 
         // ── Capture + output loop ─────────────────────────────────────────────
 
-        private unsafe void CaptureLoop(MonitorInfo monitor, DeckLinkDeviceInfo deckLinkInfo,
+        private unsafe void CaptureLoop(MonitorInfo monitor, IntPtr outputPtr,
             OutputFormatInfo format, CancellationToken ct)
         {
-            IDeckLink deckLink = deckLinkInfo.Device;
             Log("Creating D3D11 device...");
             using var d3dDevice = new SharpDX.Direct3D11.Device(
                 SharpDX.Direct3D.DriverType.Hardware, DeviceCreationFlags.BgraSupport);
