@@ -402,23 +402,25 @@ namespace MonitorToDeckLink
                 if (frameNumber == 0)
                 {
                     Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
-                    // Verify frame is a real COM object
                     if (framePtr != IntPtr.Zero)
                     {
-                        Guid iunkGuid = new Guid("00000000-0000-0000-C000-000000000046");
-                        int qiIunk = Marshal.QueryInterface(framePtr, ref iunkGuid, out IntPtr iunkPtr);
-                        Log($"  QI IUnknown: hr=0x{qiIunk:X8}");
-                        if (qiIunk == 0) Marshal.Release(iunkPtr);
-                        
-                        Guid mvfGuid = new Guid("69E2639F-40DA-4E19-B6F2-20ACE815C390");
-                        int qiMvf = Marshal.QueryInterface(framePtr, ref mvfGuid, out IntPtr mvfPtr);
-                        Log($"  QI IDeckLinkMutableVideoFrame: hr=0x{qiMvf:X8}");
-                        if (qiMvf == 0) Marshal.Release(mvfPtr);
-                        
-                        Guid vfGuid = new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17");
-                        int qiVf = Marshal.QueryInterface(framePtr, ref vfGuid, out IntPtr vfPtr);
-                        Log($"  QI IDeckLinkVideoFrame: hr=0x{qiVf:X8}");
-                        if (qiVf == 0) { Log($"  IDeckLinkVideoFrame ptr=0x{vfPtr:X}"); Marshal.Release(vfPtr); }
+                        // Try a range of known DeckLink frame GUIDs to find which SDK version matches
+                        var guids = new (string name, Guid g)[] {
+                            ("IUnknown",                    new Guid("00000000-0000-0000-C000-000000000046")),
+                            ("IDeckLinkVideoFrame old",     new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17")),
+                            ("IDeckLinkMutableVideoFrame",  new Guid("69E2639F-40DA-4E19-B6F2-20ACE815C390")),
+                            ("IDeckLinkVideoBuffer",        new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE")),
+                            // Newer GUIDs from SDK 14+
+                            ("IDeckLinkVideoFrame2",        new Guid("CE2B3882-3A0A-4B2B-8D32-B3E81B4641EF")),
+                            ("IDeckLinkMutableVideoFrame2", new Guid("C7B86174-874A-4204-9372-2CF1E1686648")),
+                        };
+                        foreach (var (name, g) in guids)
+                        {
+                            var gg = g;
+                            int hr = Marshal.QueryInterface(framePtr, ref gg, out IntPtr p);
+                            Log($"  QI {name}: hr=0x{hr:X8}" + (hr==0 ? $" ptr=0x{p:X}" : ""));
+                            if (hr == 0) Marshal.Release(p);
+                        }
                     }
                 }
 
