@@ -322,11 +322,14 @@ namespace MonitorToDeckLink
                 throw new Exception("No IDeckLinkOutput interface found on this device. Check device selection.");
 
             Log($"Acquired {foundOutputName}.");
-            var deckOutput = (IDeckLinkOutput)Marshal.GetObjectForIUnknown(outputPtr);
-            Marshal.Release(outputPtr);
-            Log("IDeckLinkOutput interface acquired.");
+            // Keep outputPtr alive - we call methods via DeckLinkVtable helper
+            Log("IDeckLinkOutput interface acquired. Setting up vtable caller...");
+            using var deckOutput = new DeckLinkOutputVtable(outputPtr);
+            Marshal.Release(outputPtr); // DeckLinkOutputVtable AddRefs internally
 
-            deckOutput.EnableVideoOutput(format.Mode, _BMDVideoOutputFlags.bmdVideoOutputFlagDefault);
+            Log("Enabling video output...");
+            int enableHr = deckOutput.EnableVideoOutput((int)format.Mode, 0);
+            if (enableHr != 0) throw new Exception($"EnableVideoOutput failed: 0x{enableHr:X8}");
             Log("DeckLink video output enabled.");
 
             long   frameDuration  = (long)(TimeSpan.TicksPerSecond / format.FrameRate);
@@ -361,10 +364,7 @@ namespace MonitorToDeckLink
                         gotNewFrame = true;
                         timeoutCount = 0;
                     }
-                    else
-                    {
-                        timeoutCount++;
-                    }
+                    else { timeoutCount++; }
                 }
                 catch (SharpDX.SharpDXException ex)
                 {
@@ -390,43 +390,39 @@ namespace MonitorToDeckLink
                     finally { d3dDevice.ImmediateContext.UnmapSubresource(stagingTex, 0); }
                     lastFrame = uyvyBuf;
                 }
-                else if (lastFrame != null)
+                else if (lastFrame != null) { uyvyBuf = lastFrame; }
+                else { frameNumber++; continue; }
+
+                // Allocate frame buffer, fill with UYVY, schedule
+                IntPtr frameBytes = Marshal.AllocHGlobal(uyvyBuf.Length);
+                try
                 {
-                    uyvyBuf = lastFrame;
+                    fixed (byte* src = uyvyBuf)
+                        System.Buffer.MemoryCopy(src, (void*)frameBytes, uyvyBuf.Length, uyvyBuf.Length);
+
+                    int schedHr = deckOutput.CreateAndScheduleFrame(
+                        format.Width, format.Height, deckRowBytes,
+                        frameBytes, uyvyBuf.Length,
+                        frameNumber * frameDuration, frameDuration,
+                        TimeSpan.TicksPerSecond);
+
+                    if (schedHr != 0 && frameNumber < 5)
+                        Log($"CreateAndScheduleFrame hr=0x{schedHr:X8} frame={frameNumber}");
                 }
-                else
-                {
-                    frameNumber++;
-                    continue;
-                }
-
-                deckOutput.CreateVideoFrame(
-                    format.Width, format.Height, deckRowBytes,
-                    _BMDPixelFormat.bmdFormat8BitYUV,
-                    _BMDFrameFlags.bmdFrameFlagDefault,
-                    out IDeckLinkMutableVideoFrame deckFrame);
-
-                var deckBuffer = (IDeckLinkVideoBuffer)deckFrame;
-                deckBuffer.GetBytes(out IntPtr deckPtr);
-                fixed (byte* src = uyvyBuf)
-                    System.Buffer.MemoryCopy(src, (void*)deckPtr, uyvyBuf.Length, uyvyBuf.Length);
-
-                deckOutput.ScheduleVideoFrame(deckFrame,
-                    frameNumber * frameDuration, frameDuration, TimeSpan.TicksPerSecond);
-                Marshal.ReleaseComObject(deckFrame);
+                finally { Marshal.FreeHGlobal(frameBytes); }
 
                 if (frameNumber == 0)
                 {
                     Log("Starting scheduled playback...");
-                    deckOutput.StartScheduledPlayback(0, TimeSpan.TicksPerSecond, 1.0);
-                    Log("Scheduled playback started.");
+                    int startHr = deckOutput.StartScheduledPlayback(0, TimeSpan.TicksPerSecond, 1.0);
+                    Log($"StartScheduledPlayback hr=0x{startHr:X8}");
                 }
 
                 frameNumber++;
 
                 if (frameNumber % (long)format.FrameRate == 0)
                 {
-                    deckOutput.GetBufferedVideoFrameCount(out uint buffered);
+                    uint buffered = deckOutput.GetBufferedVideoFrameCount();
                     string statusMsg = $"Running — frame {frameNumber}  buffered: {buffered}  timeouts: {timeoutCount}";
                     Dispatcher.Invoke(() => txtStatus.Text = statusMsg);
                     if (frameNumber % ((long)format.FrameRate * 5) == 0)
@@ -435,7 +431,7 @@ namespace MonitorToDeckLink
             }
 
             Log("Stopping scheduled playback...");
-            deckOutput.StopScheduledPlayback(0, out _, TimeSpan.TicksPerSecond);
+            deckOutput.StopScheduledPlayback(0, TimeSpan.TicksPerSecond);
             deckOutput.DisableVideoOutput();
             Log("DeckLink output disabled.");
         }
@@ -472,6 +468,151 @@ namespace MonitorToDeckLink
                     dstRow[3] = (byte)Math.Clamp((int)y1, 16, 235);
                     dstRow += 4;
                 }
+            }
+        }
+    }
+
+    // ── DeckLink Output vtable caller ─────────────────────────────────────────
+    // Calls IDeckLinkOutput COM methods directly via function pointers.
+    // IDeckLinkOutput vtable layout (from DeckLink SDK header):
+    //   0: QueryInterface, 1: AddRef, 2: Release (IUnknown)
+    //   3: DoesSupportVideoMode
+    //   4: GetDisplayModeIterator
+    //   5: SetScreenPreviewCallback
+    //   6: EnableVideoOutput
+    //   7: DisableVideoOutput
+    //   8: SetVideoOutputFrameMemoryAllocator
+    //   9: CreateVideoFrame
+    //  10: SetAncillaryData
+    //  11: SetVideoOutputConversionMode
+    //  12: ScheduleVideoFrame
+    //  13: GetBufferedVideoFrameCount
+    //  14: StartScheduledPlayback
+    //  15: StopScheduledPlayback
+    //  16: IsScheduledPlaybackRunning
+    //  17: GetScheduledStreamTime
+    //  18: GetReferenceStatus
+    //  19: EnableAudioOutput
+    //  20: DisableAudioOutput
+    //  21: WriteAudioSamplesSync
+    //  22: BeginAudioPreroll
+    //  23: EndAudioPreroll
+    //  24: ScheduleAudioSamples
+    //  25: GetBufferedAudioSampleFrameCount
+    //  26: FlushBufferedAudioSamples
+    //  27: SetAudioCallback
+    //  28: GetOutputVideoFrameState
+
+    internal unsafe class DeckLinkOutputVtable : IDisposable
+    {
+        private IntPtr _ptr;
+        private void** _vtable;
+
+        // Delegate types for each method we use
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int EnableVideoOutputDel(IntPtr self, int displayMode, int flags);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int DisableVideoOutputDel(IntPtr self);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int CreateVideoFrameDel(IntPtr self, int width, int height, int rowBytes, int pixelFormat, int flags, out IntPtr outFrame);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int ScheduleVideoFrameDel(IntPtr self, IntPtr frame, long displayTime, long displayDuration, long timeScale);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBufferedVideoFrameCountDel(IntPtr self, out uint buffered);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartScheduledPlaybackDel(IntPtr self, long startTime, long timeScale, double speed);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StopScheduledPlaybackDel(IntPtr self, long stopTime, out long actualStopTime, long timeScale);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBytesDel(IntPtr self, out IntPtr buffer);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint AddRefDel(IntPtr self);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate uint ReleaseDel(IntPtr self);
+
+        public DeckLinkOutputVtable(IntPtr ptr)
+        {
+            _ptr = ptr;
+            // AddRef to keep alive
+            _vtable = *(void***)ptr;
+            var addRef = Marshal.GetDelegateForFunctionPointer<AddRefDel>((IntPtr)_vtable[1]);
+            addRef(_ptr);
+        }
+
+        public int EnableVideoOutput(int displayMode, int flags)
+        {
+            var fn = Marshal.GetDelegateForFunctionPointer<EnableVideoOutputDel>((IntPtr)_vtable[6]);
+            return fn(_ptr, displayMode, flags);
+        }
+
+        public int DisableVideoOutput()
+        {
+            var fn = Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vtable[7]);
+            return fn(_ptr);
+        }
+
+        public int CreateAndScheduleFrame(int width, int height, int rowBytes,
+            IntPtr pixelData, int pixelDataLen,
+            long displayTime, long duration, long timeScale)
+        {
+            // CreateVideoFrame -> vtable[9]
+            var createFn = Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vtable[9]);
+            int hr = createFn(_ptr, width, height, rowBytes,
+                0x32767975, // bmdFormat8BitYUV = '2vuy' = 0x32767975
+                0,          // bmdFrameFlagDefault
+                out IntPtr framePtr);
+            if (hr != 0) return hr;
+
+            // Get the frame vtable to find GetBytes
+            // IDeckLinkMutableVideoFrame vtable:
+            // 0:QI 1:AddRef 2:Release (IUnknown)
+            // 3:GetWidth 4:GetHeight 5:GetRowBytes 6:GetPixelFormat 7:GetFlags
+            // 8:GetTimecode 9:GetAncillaryData
+            // 10:SetFlags 11:SetTimecode 12:SetTimecodeFromComponents
+            // 13:SetAncillaryData 14:SetTimecodeUserBits 15:SetInterfaceProvider
+            // But GetBytes is on IDeckLinkVideoBuffer - need to QI for it
+            // IDeckLinkVideoBuffer GUID: CCB4B64A-5C86-4E02-B778-885D352709FE
+            Guid bufGuid = new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE");
+            int qiHr = Marshal.QueryInterface(framePtr, ref bufGuid, out IntPtr bufPtr);
+            if (qiHr == 0 && bufPtr != IntPtr.Zero)
+            {
+                void** framevt = *(void***)bufPtr;
+                // IDeckLinkVideoBuffer vtable: 0:QI 1:AddRef 2:Release 3:GetBytes 4:StartAccess 5:EndAccess
+                var getBytesFn = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)framevt[3]);
+                getBytesFn(bufPtr, out IntPtr dstPtr);
+                System.Buffer.MemoryCopy((void*)pixelData, (void*)dstPtr, pixelDataLen, pixelDataLen);
+                var relBuf = Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)framevt[2]);
+                relBuf(bufPtr);
+            }
+
+            // ScheduleVideoFrame -> vtable[12]
+            var schedFn = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vtable[12]);
+            hr = schedFn(_ptr, framePtr, displayTime, duration, timeScale);
+
+            // Release the frame
+            void** fvt = *(void***)framePtr;
+            var relFrame = Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)fvt[2]);
+            relFrame(framePtr);
+
+            return hr;
+        }
+
+        public uint GetBufferedVideoFrameCount()
+        {
+            var fn = Marshal.GetDelegateForFunctionPointer<GetBufferedVideoFrameCountDel>((IntPtr)_vtable[13]);
+            fn(_ptr, out uint count);
+            return count;
+        }
+
+        public int StartScheduledPlayback(long startTime, long timeScale, double speed)
+        {
+            var fn = Marshal.GetDelegateForFunctionPointer<StartScheduledPlaybackDel>((IntPtr)_vtable[14]);
+            return fn(_ptr, startTime, timeScale, speed);
+        }
+
+        public int StopScheduledPlayback(long stopTime, long timeScale)
+        {
+            var fn = Marshal.GetDelegateForFunctionPointer<StopScheduledPlaybackDel>((IntPtr)_vtable[15]);
+            return fn(_ptr, stopTime, out _, timeScale);
+        }
+
+        public void Dispose()
+        {
+            if (_ptr != IntPtr.Zero)
+            {
+                var relFn = Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)_vtable[2]);
+                relFn(_ptr);
+                _ptr = IntPtr.Zero;
             }
         }
     }
