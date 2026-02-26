@@ -13,15 +13,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- DeckLink COM SDK - installed by Blackmagic Desktop Video -->
-    <!-- Add reference via: Project > Add COM Reference > DeckLink API -->
-    <!-- Or add the TLB manually from: C:\Program Files\Blackmagic Design\DeckLink -->
-    <COMReference Include="DeckLinkAPI">
-      <Guid>{97E7F2AA-6B49-4C58-B3DB-F27EB08EB5F1}</Guid>
-      <VersionMajor>10</VersionMajor>
-      <VersionMinor>11</VersionMinor>
-      <WrapperTool>tlbimp</WrapperTool>
-    </COMReference>
+    <!-- Pre-generated DeckLink interop DLL - see build.bat which generates this from the installed COM SDK -->
+    <Reference Include="DeckLinkAPI">
+      <HintPath>lib\DeckLinkAPI.dll</HintPath>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
