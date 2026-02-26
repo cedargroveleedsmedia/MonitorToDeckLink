@@ -198,17 +198,44 @@ namespace MonitorToDeckLink
             var token = _cts.Token;
             var device = dlInfo.Device; // capture ref for STA thread
 
-            // DeckLink COM objects must be used on the same STA thread they were created on
-            // So we create a fresh STA thread and do the QI + all COM calls there
+            // DeckLink COM objects must be created and used on the same STA thread
+            // We re-enumerate on the STA thread to get a fresh RCW in the right apartment
+            int deviceIndex = cmbDeckLinks.SelectedIndex;
             var tcs = new TaskCompletionSource<bool>();
             var staThread = new Thread(() =>
             {
-                IDeckLinkOutput2? deckOutput = null;
                 try
                 {
-                    // QI on the STA thread that will use it
-                    deckOutput = (IDeckLinkOutput2)device;
-                    Log($"Got IDeckLinkOutput2 on STA thread");
+                    // Re-enumerate DeckLink on this STA thread to get proper apartment-local RCW
+                    Log("Re-enumerating DeckLink on STA thread...");
+                    var iter2 = (IDeckLinkIterator2)new CDeckLinkIterator2();
+                    IDeckLinkOutput2? deckOutput = null;
+                    int idx = 0;
+                    while (true)
+                    {
+                        int hr = iter2.Next(out IDeckLink2 dev);
+                        if (hr != 0 || dev == null) break;
+                        if (idx == deviceIndex)
+                        {
+                            dev.GetDisplayName(out string n);
+                            Log($"STA thread got device: {n}");
+                            // Use Marshal.QueryInterface with raw pointer for reliable QI
+                            IntPtr iunk = Marshal.GetIUnknownForObject(dev);
+                            Guid outputGuid = new Guid("1A8077F1-9FE2-4533-8147-2294305E253F");
+                            int qiHr = Marshal.QueryInterface(iunk, ref outputGuid, out IntPtr outPtr);
+                            Marshal.Release(iunk);
+                            Log($"QI IDeckLinkOutput: hr=0x{qiHr:X8} ptr=0x{outPtr:X}");
+                            if (qiHr == 0 && outPtr != IntPtr.Zero)
+                            {
+                                deckOutput = (IDeckLinkOutput2)Marshal.GetObjectForIUnknown(outPtr);
+                                Marshal.Release(outPtr);
+                            }
+                            break;
+                        }
+                        idx++;
+                    }
+                    if (deckOutput == null) throw new Exception("Could not get IDeckLinkOutput on STA thread.");
+                    Log("Got IDeckLinkOutput2 on STA thread, starting capture...");
                     CaptureLoop(monitor, deckOutput, format, token);
                     tcs.SetResult(true);
                 }
