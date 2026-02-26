@@ -235,8 +235,16 @@ namespace MonitorToDeckLink
                         idx++;
                     }
                     if (deckOutput == null) throw new Exception("Could not get IDeckLinkOutput on STA thread.");
-                    Log("Got IDeckLinkOutput2 on STA thread, starting capture...");
-                    CaptureLoop(monitor, deckOutput, format, token);
+                    // Get raw ptr BEFORE GetObjectForIUnknown wraps it in RCW
+                    // We already have outPtr from above - but it was Released. Re-QI:
+                    IntPtr iunk2 = Marshal.GetIUnknownForObject(deckOutput);
+                    Guid og2 = new Guid("1A8077F1-9FE2-4533-8147-2294305E253F");
+                    Marshal.QueryInterface(iunk2, ref og2, out IntPtr rawOutputPtr);
+                    Marshal.Release(iunk2);
+                    Log($"Raw output ptr for vtable: 0x{rawOutputPtr:X}");
+                    Log("Starting capture loop...");
+                    CaptureLoop(monitor, rawOutputPtr, format, token);
+                    Marshal.Release(rawOutputPtr);
                     tcs.SetResult(true);
                 }
                 catch (Exception ex) { tcs.SetException(ex); }
@@ -271,9 +279,11 @@ namespace MonitorToDeckLink
                 : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(166, 227, 161));
         });
 
-        private unsafe void CaptureLoop(MonitorInfo monitor, IDeckLinkOutput2 deckOutput,
+        private unsafe void CaptureLoop(MonitorInfo monitor, IntPtr outputRawPtr,
             OutputFormatInfo format, CancellationToken ct)
         {
+            using var deckOutput = new DeckLinkOutput(outputRawPtr);
+            Log($"DeckLinkOutput vtable:\n{deckOutput.DumpVtable()}");
             Log("Creating D3D11 device...");
             using var d3dDevice = new SharpDX.Direct3D11.Device(
                 SharpDX.Direct3D.DriverType.Hardware, DeviceCreationFlags.BgraSupport);
@@ -308,9 +318,9 @@ namespace MonitorToDeckLink
 
             Log($"Enabling video output: {format.Label} mode=0x{format.ModeInt:X8}");
             int enableHr = deckOutput.EnableVideoOutput(format.ModeInt, 0);
-            Log($"EnableVideoOutput hr=0x{enableHr:X8}");
+            Log($"EnableVideoOutput returned: 0x{enableHr:X8}");
             if (enableHr != 0) throw new Exception($"EnableVideoOutput failed: 0x{enableHr:X8}");
-            Log("Video output enabled.");
+            Log("Video output enabled!");
 
             long   frameDuration = (long)(TimeSpan.TicksPerSecond / format.FrameRate);
             double framePeriodMs = 1000.0 / format.FrameRate;
@@ -364,26 +374,27 @@ namespace MonitorToDeckLink
                 else if (lastFrame != null) uyvy = lastFrame;
                 else { frameNumber++; continue; }
 
-                int schedHr = deckOutput.CreateVideoFrame(
+                int createHr = deckOutput.CreateVideoFrame(
                     format.Width, format.Height, rowBytes,
-                    0x32767975, 0, // bmdFormat8BitYUV, bmdFrameFlagDefault
-                    out IDeckLinkMutableVideoFrame2 frame);
+                    0x32767975, 0, // bmdFormat8BitYUV '2vuy', bmdFrameFlagDefault
+                    out IntPtr framePtr);
 
-                if (schedHr == 0 && frame != null)
+                if (createHr == 0 && framePtr != IntPtr.Zero)
                 {
-                    frame.GetBytes(out IntPtr dst);
+                    deckOutput.GetFrameBytes(framePtr, out IntPtr dst);
                     fixed (byte* src = uyvy)
                         System.Buffer.MemoryCopy(src, (void*)dst, uyvy.Length, uyvy.Length);
-                    deckOutput.ScheduleVideoFrame(frame, frameNumber * frameDuration, frameDuration, TimeSpan.TicksPerSecond);
-                    Marshal.ReleaseComObject(frame);
+                    deckOutput.ScheduleVideoFrame(framePtr, frameNumber * frameDuration, frameDuration, TimeSpan.TicksPerSecond);
+                    deckOutput.ReleaseFrame(framePtr);
                 }
-                else if (frameNumber < 3) Log($"CreateVideoFrame hr=0x{schedHr:X8}");
+                else if (frameNumber < 3) Log($"CreateVideoFrame hr=0x{createHr:X8}");
 
                 if (frameNumber == 0)
                 {
                     Log("StartScheduledPlayback...");
                     int startHr = deckOutput.StartScheduledPlayback(0, TimeSpan.TicksPerSecond, 1.0);
                     Log($"StartScheduledPlayback hr=0x{startHr:X8}");
+                    if (startHr != 0) throw new Exception($"StartScheduledPlayback failed: 0x{startHr:X8}");
                 }
 
                 frameNumber++;
@@ -397,7 +408,7 @@ namespace MonitorToDeckLink
             }
 
             Log("Stopping...");
-            deckOutput.StopScheduledPlayback(0, out _, TimeSpan.TicksPerSecond);
+            deckOutput.StopScheduledPlayback(0, TimeSpan.TicksPerSecond);
             deckOutput.DisableVideoOutput();
             Log("Done.");
         }
