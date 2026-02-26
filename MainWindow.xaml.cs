@@ -5,16 +5,12 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Interop;
 using DeckLinkAPI;
-using SharpDX;
 using SharpDX.Direct3D11;
 using SharpDX.DXGI;
 
 namespace MonitorToDeckLink
 {
-    // ── DXGI monitor capture via Desktop Duplication ──────────────────────────
-
     public class MonitorInfo
     {
         public int Index { get; set; }
@@ -43,8 +39,6 @@ namespace MonitorToDeckLink
         public double FrameRate { get; set; }
         public override string ToString() => Label;
     }
-
-    // ── Main Window ───────────────────────────────────────────────────────────
 
     public partial class MainWindow : Window
     {
@@ -90,8 +84,6 @@ namespace MonitorToDeckLink
             StopCapture();
         }
 
-        // ── Populate monitors via DXGI ─────────────────────────────────────
-
         private void PopulateMonitors()
         {
             var monitors = new List<MonitorInfo>();
@@ -101,10 +93,10 @@ namespace MonitorToDeckLink
                 int adapterIdx = 0;
                 foreach (var adapter in factory.Adapters1)
                 {
-                    int outputIdx = 0;
-                    foreach (var output in adapter.Outputs)
+                    int outIdx = 0;
+                    foreach (var dxgiOutput in adapter.Outputs)
                     {
-                        var desc = output.Description;
+                        var desc = dxgiOutput.Description;
                         monitors.Add(new MonitorInfo
                         {
                             Index = monitors.Count,
@@ -112,10 +104,10 @@ namespace MonitorToDeckLink
                             DeviceName = desc.DeviceName,
                             Width = desc.DesktopBounds.Right - desc.DesktopBounds.Left,
                             Height = desc.DesktopBounds.Bottom - desc.DesktopBounds.Top,
-                            IsPrimary = desc.IsAttachedToDesktop && outputIdx == 0 && adapterIdx == 0
+                            IsPrimary = adapterIdx == 0 && outIdx == 0
                         });
-                        output.Dispose();
-                        outputIdx++;
+                        dxgiOutput.Dispose();
+                        outIdx++;
                     }
                     adapter.Dispose();
                     adapterIdx++;
@@ -129,8 +121,6 @@ namespace MonitorToDeckLink
             cmbMonitors.ItemsSource = monitors;
             if (monitors.Count > 0) cmbMonitors.SelectedIndex = 0;
         }
-
-        // ── Populate DeckLink devices ──────────────────────────────────────
 
         private void PopulateDeckLinks()
         {
@@ -160,14 +150,11 @@ namespace MonitorToDeckLink
         private void PopulateFormats()
         {
             cmbFormats.ItemsSource = _formats;
-            // Default to 1080p 25
-            cmbFormats.SelectedIndex = 2;
+            cmbFormats.SelectedIndex = 2; // 1080p25 default
         }
 
         private void cmbMonitors_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
         private void cmbDeckLinks_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
-
-        // ── Start / Stop ───────────────────────────────────────────────────
 
         private void btnStart_Click(object sender, RoutedEventArgs e)
         {
@@ -180,14 +167,12 @@ namespace MonitorToDeckLink
 
             btnStart.IsEnabled = false;
             btnStop.IsEnabled = true;
-            SetStatus($"Starting output: {monitor} → {deckLinkInfo.Name} @ {format.Label}");
+            SetStatus($"Starting: {monitor.Name} → {deckLinkInfo.Name} @ {format.Label}");
 
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
 
-            _captureTask = Task.Run(() =>
-                CaptureLoop(monitor, deckLinkInfo.Device, format, token), token);
-
+            _captureTask = Task.Run(() => CaptureLoop(monitor, deckLinkInfo.Device, format, token), token);
             _captureTask.ContinueWith(t =>
             {
                 Dispatcher.Invoke(() =>
@@ -222,42 +207,33 @@ namespace MonitorToDeckLink
             });
         }
 
-        // ── Capture + DeckLink output loop ─────────────────────────────────
-
         private unsafe void CaptureLoop(MonitorInfo monitor, IDeckLink deckLink,
             OutputFormatInfo format, CancellationToken ct)
         {
-            // ---- Set up D3D11 + DXGI Desktop Duplication ----
-            using var d3dDevice = new SharpDX.Direct3D11.Device(SharpDX.Direct3D.DriverType.Hardware,
+            // ── D3D11 device ──────────────────────────────────────────────────
+            using var d3dDevice = new SharpDX.Direct3D11.Device(
+                SharpDX.Direct3D.DriverType.Hardware,
                 DeviceCreationFlags.BgraSupport);
-            using var dxgiDevice = d3dDevice.QueryInterface<SharpDX.DXGI.Device>();
-            using var adapter = dxgiDevice.GetParent<Adapter>();
-            using var factory = adapter.GetParent<Factory1>();
 
-            // Find the correct output
+            using var dxgiDevice = d3dDevice.QueryInterface<SharpDX.DXGI.Device>();
+            using var adapter   = dxgiDevice.GetParent<Adapter>();
+            using var factory   = adapter.GetParent<Factory1>();
+
+            // ── Find the right DXGI output ────────────────────────────────────
             Output1? dupeOutput = null;
-            int adapterIdx = 0;
             foreach (var adpt in factory.Adapters1)
             {
-                int outIdx = 0;
-                foreach (var output in adpt.Outputs)
+                foreach (var dxgiOut in adpt.Outputs)
                 {
-                    if (adapterIdx == 0)
+                    if (dxgiOut.Description.DeviceName == monitor.DeviceName)
                     {
-                        // count up to the monitor index
-                    }
-                    // We match by device name
-                    if (output.Description.DeviceName == monitor.DeviceName)
-                    {
-                        dupeOutput = output.QueryInterface<Output1>();
-                        output.Dispose();
+                        dupeOutput = dxgiOut.QueryInterface<Output1>();
+                        dxgiOut.Dispose();
                         goto foundOutput;
                     }
-                    output.Dispose();
-                    outIdx++;
+                    dxgiOut.Dispose();
                 }
                 adpt.Dispose();
-                adapterIdx++;
             }
 
             foundOutput:
@@ -267,7 +243,7 @@ namespace MonitorToDeckLink
             using var deskDupe = dupeOutput.DuplicateOutput(d3dDevice);
             dupeOutput.Dispose();
 
-            // Staging texture for CPU readback
+            // ── Staging texture for CPU readback ──────────────────────────────
             var stagingDesc = new Texture2DDescription
             {
                 Width = monitor.Width, Height = monitor.Height,
@@ -279,66 +255,64 @@ namespace MonitorToDeckLink
                 CpuAccessFlags = CpuAccessFlags.Read,
                 OptionFlags = ResourceOptionFlags.None
             };
-            using var staging = new Texture2D(d3dDevice, stagingDesc);
+            using var stagingTex = new Texture2D(d3dDevice, stagingDesc);
 
-            // ---- Set up DeckLink output ----
-            var output = (IDeckLinkOutput)deckLink;
-
-            output.EnableVideoOutput(format.Mode,
+            // ── DeckLink output ───────────────────────────────────────────────
+            var deckOutput = (IDeckLinkOutput)deckLink;
+            deckOutput.EnableVideoOutput(format.Mode,
                 _BMDVideoOutputFlags.bmdVideoOutputFlagDefault);
 
-            // Pre-allocate frame pool (2 frames)
-            long frameDuration = (long)(TimeSpan.TicksPerSecond / format.FrameRate);
-
-            // Main loop
+            long frameDuration  = (long)(TimeSpan.TicksPerSecond / format.FrameRate);
             double framePeriodMs = 1000.0 / format.FrameRate;
             var sw = Stopwatch.StartNew();
             long frameNumber = 0;
 
             while (!ct.IsCancellationRequested)
             {
+                // ── Timing ────────────────────────────────────────────────────
                 double targetMs = frameNumber * framePeriodMs;
-                double waitMs = targetMs - sw.Elapsed.TotalMilliseconds;
+                double waitMs   = targetMs - sw.Elapsed.TotalMilliseconds;
                 if (waitMs > 1) Thread.Sleep((int)waitMs - 1);
                 while (sw.Elapsed.TotalMilliseconds < targetMs) { /* spin */ }
 
-                // Acquire desktop frame
+                // ── Capture frame ─────────────────────────────────────────────
                 SharpDX.DXGI.Resource? desktopResource = null;
                 try
                 {
-                    deskDupe.AcquireNextFrame(16, out var frameInfo, out desktopResource);
+                    deskDupe.TryAcquireNextFrame(16,
+                        out SharpDX.DXGI.OutduplFrameInfo frameInfo,
+                        out desktopResource);
                 }
                 catch (SharpDXException ex) when (ex.ResultCode == SharpDX.DXGI.ResultCode.WaitTimeout)
                 {
-                    // No new frame, reuse last (skip)
                     frameNumber++;
                     continue;
                 }
 
+                if (desktopResource == null) { frameNumber++; continue; }
+
                 using (desktopResource)
                 using (var desktopTex = desktopResource.QueryInterface<Texture2D>())
                 {
-                    d3dDevice.ImmediateContext.CopyResource(desktopTex, staging);
+                    d3dDevice.ImmediateContext.CopyResource(desktopTex, stagingTex);
                 }
                 deskDupe.ReleaseFrame();
 
-                // Map staging texture
+                // ── Map + convert + send ──────────────────────────────────────
                 var mapped = d3dDevice.ImmediateContext.MapSubresource(
-                    staging, 0, MapMode.Read, MapFlags.None);
+                    stagingTex, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
 
                 try
                 {
-                    // Create DeckLink frame
-                    output.CreateVideoFrame(
+                    deckOutput.CreateVideoFrame(
                         format.Width, format.Height,
-                        format.Width * 2,                          // UYVY: 2 bytes/pixel
+                        format.Width * 2,
                         _BMDPixelFormat.bmdFormat8BitYUV,
                         _BMDFrameFlags.bmdFrameFlagDefault,
                         out IDeckLinkMutableVideoFrame deckFrame);
 
                     deckFrame.GetBytes(out IntPtr deckPtr);
 
-                    // Convert BGRA (screen, possibly scaled) → UYVY
                     BgraToUyvy(
                         (byte*)mapped.DataPointer,
                         mapped.RowPitch,
@@ -346,39 +320,34 @@ namespace MonitorToDeckLink
                         (byte*)deckPtr,
                         format.Width, format.Height);
 
-                    output.ScheduleVideoFrame(deckFrame,
-                        frameNumber * frameDuration, frameDuration,
+                    deckOutput.ScheduleVideoFrame(deckFrame,
+                        frameNumber * frameDuration,
+                        frameDuration,
                         TimeSpan.TicksPerSecond);
 
                     Marshal.ReleaseComObject(deckFrame);
                 }
                 finally
                 {
-                    d3dDevice.ImmediateContext.UnmapSubresource(staging, 0);
+                    d3dDevice.ImmediateContext.UnmapSubresource(stagingTex, 0);
                 }
 
-                // Start playback on first frame
                 if (frameNumber == 0)
-                    output.StartScheduledPlayback(0, TimeSpan.TicksPerSecond, 1.0);
+                    deckOutput.StartScheduledPlayback(0, TimeSpan.TicksPerSecond, 1.0);
 
                 frameNumber++;
 
-                // Update status periodically
                 if (frameNumber % (long)format.FrameRate == 0)
                 {
-                    long drop = 0;
-                    output.GetBufferedVideoFrameCount(out uint buffered);
+                    deckOutput.GetBufferedVideoFrameCount(out uint buffered);
                     Dispatcher.Invoke(() =>
                         txtStatus.Text = $"Running — frame {frameNumber}  buffered: {buffered}");
                 }
             }
 
-            // Stop DeckLink
-            output.StopScheduledPlayback(0, out _, TimeSpan.TicksPerSecond);
-            output.DisableVideoOutput();
+            deckOutput.StopScheduledPlayback(0, out _, TimeSpan.TicksPerSecond);
+            deckOutput.DisableVideoOutput();
         }
-
-        // ── BGRA → UYVY (4:2:2) conversion with optional scale ────────────
 
         private static unsafe void BgraToUyvy(
             byte* src, int srcPitch, int srcW, int srcH,
@@ -386,35 +355,32 @@ namespace MonitorToDeckLink
         {
             float scaleX = (float)srcW / dstW;
             float scaleY = (float)srcH / dstH;
-
-            int dstPitch = dstW * 2; // UYVY = 2 bytes per pixel
+            int dstPitch = dstW * 2;
 
             for (int y = 0; y < dstH; y++)
             {
-                int srcY = Math.Min((int)(y * scaleY), srcH - 1);
+                int srcY   = Math.Min((int)(y * scaleY), srcH - 1);
                 byte* srcRow = src + srcY * srcPitch;
-                byte* dstRow = dst + y * dstPitch;
+                byte* dstRow = dst + y  * dstPitch;
 
                 for (int x = 0; x < dstW; x += 2)
                 {
-                    // Sample two horizontal pixels
                     int srcX0 = Math.Min((int)(x * scaleX), srcW - 1);
                     int srcX1 = Math.Min((int)((x + 1) * scaleX), srcW - 1);
 
                     byte* p0 = srcRow + srcX0 * 4;
                     byte* p1 = srcRow + srcX1 * 4;
 
-                    // BT.709 BGRA → YUV
+                    // BT.709 BGRA → YCbCr
                     float y0 = 16 + 0.1826f * p0[2] + 0.6142f * p0[1] + 0.0620f * p0[0];
                     float y1 = 16 + 0.1826f * p1[2] + 0.6142f * p1[1] + 0.0620f * p1[0];
                     float cb = 128 - 0.1006f * p0[2] - 0.3386f * p0[1] + 0.4392f * p0[0];
                     float cr = 128 + 0.4392f * p0[2] - 0.3989f * p0[1] - 0.0403f * p0[0];
 
-                    dstRow[0] = (byte)Math.Clamp((int)cb, 0, 255);  // U
-                    dstRow[1] = (byte)Math.Clamp((int)y0, 16, 235); // Y0
-                    dstRow[2] = (byte)Math.Clamp((int)cr, 0, 255);  // V
-                    dstRow[3] = (byte)Math.Clamp((int)y1, 16, 235); // Y1
-
+                    dstRow[0] = (byte)Math.Clamp((int)cb, 0, 255);
+                    dstRow[1] = (byte)Math.Clamp((int)y0, 16, 235);
+                    dstRow[2] = (byte)Math.Clamp((int)cr, 0, 255);
+                    dstRow[3] = (byte)Math.Clamp((int)y1, 16, 235);
                     dstRow += 4;
                 }
             }
