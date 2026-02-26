@@ -394,13 +394,14 @@ namespace MonitorToDeckLink
                 else if (lastFrame != null) uyvy = lastFrame;
                 else { frameNumber++; continue; }
 
-                if (frameNumber == 0) Log($"Calling CreateVideoFrame slot[10] {format.Width}x{format.Height} rb={rowBytes}...");
+                if (frameNumber == 0) Log($"Calling CreateVideoFrame {format.Width}x{format.Height} rb={rowBytes}...");
                 int createHr = deckOutput.CreateVideoFrame(
                     format.Width, format.Height, rowBytes,
                     0x32767975, 0,
-                    out IntPtr framePtr);
+                    out IntPtr framePtr,
+                    frameNumber == 0 ? (System.Action<string>)Log : null);
 
-                if (frameNumber == 0) Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
+                if (frameNumber == 0) Log($"CreateVideoFrame result hr=0x{createHr:X8} ptr=0x{framePtr:X}");
 
                 if (createHr == 0 && framePtr != IntPtr.Zero)
                 {

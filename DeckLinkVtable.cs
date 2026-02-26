@@ -63,9 +63,38 @@ namespace MonitorToDeckLink
         public int DisableVideoOutput() =>
             Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vt[8])(_ptr);
 
-        // Try slot 9 - vtable shows [10] < [09] suggesting different ordering
-        public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
-            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
+        private int _createSlot = -1;
+
+        public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame, System.Action<string>? log = null)
+        {
+            if (_createSlot >= 0)
+                return Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[_createSlot])(_ptr, w, h, rb, fmt, flags, out frame);
+
+            // Probe slots 8-12 to find CreateVideoFrame
+            for (int s = 8; s <= 12; s++)
+            {
+                frame = IntPtr.Zero;
+                int hr = Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[s])(_ptr, w, h, rb, fmt, flags, out frame);
+                log?.Invoke($"CreateVideoFrame slot[{s}] hr=0x{hr:X8} ptr=0x{frame:X}");
+                if (hr == 0 && frame != IntPtr.Zero)
+                {
+                    // Verify it's a real COM object by trying QI for IUnknown
+                    Guid iunkGuid = new Guid("00000000-0000-0000-C000-000000000046");
+                    int qiHr = Marshal.QueryInterface(frame, ref iunkGuid, out IntPtr iunkPtr);
+                    log?.Invoke($"  QI IUnknown: hr=0x{qiHr:X8}");
+                    if (qiHr == 0 && iunkPtr != IntPtr.Zero)
+                    {
+                        Marshal.Release(iunkPtr);
+                        _createSlot = s;
+                        log?.Invoke($"  -> using slot {s} for CreateVideoFrame");
+                        return 0;
+                    }
+                    // Not a COM object - release whatever it returned
+                }
+            }
+            frame = IntPtr.Zero;
+            return -1;
+        }
 
         public string DumpFrameVtable(IntPtr frame)
         {
