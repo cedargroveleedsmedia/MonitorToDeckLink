@@ -375,16 +375,23 @@ namespace MonitorToDeckLink
 
                 int createHr = deckOutput.CreateVideoFrame(
                     format.Width, format.Height, rowBytes,
-                    0x32767975, 0, // bmdFormat8BitYUV '2vuy', bmdFrameFlagDefault
+                    0x32767975, 0,
                     out IntPtr framePtr);
+
+                if (frameNumber == 0) Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
 
                 if (createHr == 0 && framePtr != IntPtr.Zero)
                 {
+                    if (frameNumber == 0) Log("Calling GetFrameBytes...");
                     deckOutput.GetFrameBytes(framePtr, out IntPtr dst);
+                    if (frameNumber == 0) Log($"GetFrameBytes dst=0x{dst:X}");
                     fixed (byte* src = uyvy)
                         System.Buffer.MemoryCopy(src, (void*)dst, uyvy.Length, uyvy.Length);
-                    deckOutput.ScheduleVideoFrame(framePtr, frameNumber * frameDuration, frameDuration, TimeSpan.TicksPerSecond);
+                    if (frameNumber == 0) Log("MemoryCopy done, calling ScheduleVideoFrame...");
+                    int schedHr = deckOutput.ScheduleVideoFrame(framePtr, frameNumber * frameDuration, frameDuration, TimeSpan.TicksPerSecond);
+                    if (frameNumber == 0) Log($"ScheduleVideoFrame hr=0x{schedHr:X8}");
                     deckOutput.ReleaseFrame(framePtr);
+                    if (frameNumber == 0) Log("Frame 0 complete.");
                 }
                 else if (frameNumber < 3) Log($"CreateVideoFrame hr=0x{createHr:X8}");
 
