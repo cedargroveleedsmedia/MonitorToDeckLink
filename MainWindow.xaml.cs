@@ -396,9 +396,14 @@ namespace MonitorToDeckLink
                     if (frameNumber == 0) Log("Calling GetFrameBytes...");
                     deckOutput.GetFrameBytes(framePtr, out IntPtr dst, msg => { if (frameNumber == 0) Log(msg); });
                     if (frameNumber == 0) Log($"GetFrameBytes dst=0x{dst:X}");
-                    fixed (byte* src = uyvy)
-                        System.Buffer.MemoryCopy(src, (void*)dst, uyvy.Length, uyvy.Length);
-                    if (frameNumber == 0) Log("MemoryCopy done, calling ScheduleVideoFrame...");
+                    if (dst != IntPtr.Zero)
+                    {
+                        fixed (byte* src = uyvy)
+                            System.Buffer.MemoryCopy(src, (void*)dst, uyvy.Length, uyvy.Length);
+                        if (frameNumber == 0) Log("MemoryCopy done.");
+                    }
+                    deckOutput.EndFrameAccess(msg => { if (frameNumber == 0) Log(msg); });
+                    if (frameNumber == 0) Log("Calling ScheduleVideoFrame...");
                     int schedHr = deckOutput.ScheduleVideoFrame(framePtr, frameNumber * frameDuration, frameDuration, TimeSpan.TicksPerSecond);
                     if (frameNumber == 0) Log($"ScheduleVideoFrame hr=0x{schedHr:X8}");
                     deckOutput.ReleaseFrame(framePtr);

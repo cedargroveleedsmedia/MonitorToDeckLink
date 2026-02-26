@@ -76,33 +76,49 @@ namespace MonitorToDeckLink
             return sb.ToString();
         }
 
-        // QI the frame for IDeckLinkVideoBuffer (CCB4B64A) then call GetBytes at slot 3
-        // This avoids depending on IDeckLinkVideoFrame vtable layout entirely
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartAccessDel(IntPtr self, int accessType);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int EndAccessDel(IntPtr self, int accessType);
+
+        // bmdBufferAccessRead=1, bmdBufferAccessWrite=2
+        const int bmdBufferAccessWrite = 2;
+
         public void GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
         {
             bytes = IntPtr.Zero;
-            // Try IDeckLinkVideoBuffer QI first
             Guid bufGuid = new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE");
             int qiHr = Marshal.QueryInterface(frame, ref bufGuid, out IntPtr bufPtr);
-            log($"QI IDeckLinkVideoBuffer: hr=0x{qiHr:X8} ptr=0x{bufPtr:X}");
-            if (qiHr == 0 && bufPtr != IntPtr.Zero)
+            if (qiHr != 0 || bufPtr == IntPtr.Zero)
             {
-                void** bvt = *(void***)bufPtr;
-                log($"Buffer vtable [3]=0x{(IntPtr)bvt[3]:X} [4]=0x{(IntPtr)bvt[4]:X} [5]=0x{(IntPtr)bvt[5]:X}");
-                // IDeckLinkVideoBuffer: [0]QI [1]AddRef [2]Release [3]GetBytes [4]StartAccess [5]EndAccess
-                int hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
-                log($"IDeckLinkVideoBuffer::GetBytes hr=0x{hr:X8} bytes=0x{bytes:X}");
-                // Release buffer interface
-                Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)bvt[2])(bufPtr);
+                log($"QI IDeckLinkVideoBuffer failed: 0x{qiHr:X8}");
                 return;
             }
-            // Fallback: try direct frame vtable slots
-            void** fvt = *(void***)frame;
-            for (int slot = 6; slot <= 9; slot++)
+            void** bvt = *(void***)bufPtr;
+            // IDeckLinkVideoBuffer: [0]QI [1]AddRef [2]Release [3]GetBytes [4]StartAccess [5]EndAccess
+            // Must call StartAccess before GetBytes
+            int saHr = Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(bufPtr, bmdBufferAccessWrite);
+            log($"StartAccess hr=0x{saHr:X8}");
+            if (saHr == 0)
             {
-                int hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[slot])(frame, out bytes);
-                log($"Frame slot[{slot}] hr=0x{hr:X8} bytes=0x{bytes:X}");
-                if (bytes != IntPtr.Zero) return;
+                int hr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
+                log($"GetBytes hr=0x{hr:X8} bytes=0x{bytes:X}");
+            }
+            // EndAccess is called after we are done writing (in WriteFrameBytes)
+            // Store bufPtr for EndAccess - caller must call EndFrameAccess
+            _lastBufPtr = bufPtr;
+            _lastBufVt  = bvt;
+        }
+
+        private IntPtr _lastBufPtr;
+        private void** _lastBufVt;
+
+        public void EndFrameAccess(System.Action<string> log)
+        {
+            if (_lastBufPtr != IntPtr.Zero)
+            {
+                int hr = Marshal.GetDelegateForFunctionPointer<EndAccessDel>((IntPtr)_lastBufVt[5])(_lastBufPtr, bmdBufferAccessWrite);
+                log($"EndAccess hr=0x{hr:X8}");
+                Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)_lastBufVt[2])(_lastBufPtr);
+                _lastBufPtr = IntPtr.Zero;
             }
         }
 
