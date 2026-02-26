@@ -1,31 +1,65 @@
 # Monitor to DeckLink Output
 
-A Windows WPF application that captures any selected monitor and outputs it via a Blackmagic DeckLink Duo card.
+A Windows WPF application that captures any selected monitor and outputs it via a Blackmagic DeckLink card (Duo, Quad, etc).
 
-## Requirements
+---
 
-- Windows 10/11 (64-bit)
-- .NET 6.0 or later
-- Blackmagic Desktop Video software installed (provides DeckLink COM SDK)
-- Blackmagic DeckLink Duo (or compatible DeckLink card)
-- Visual Studio 2022 (to build)
+## Quickest Way to Build
 
-## Setup
+### Step 1 — Install prerequisites (one time)
 
-1. Install **Blackmagic Desktop Video** from https://www.blackmagicdesign.com/support/
-2. Open `MonitorToDeckLink.sln` in Visual Studio 2022
-3. Build in Release mode (x64)
-4. Run `MonitorToDeckLink.exe`
+| Tool | Download |
+|------|----------|
+| .NET 6 SDK | https://dotnet.microsoft.com/download/dotnet/6.0 |
+| Blackmagic Desktop Video | https://www.blackmagicdesign.com/support/family/capture-and-playback |
+
+### Step 2 — Clone the repo
+
+```bat
+git clone https://github.com/cedargroveleedsmedia/MonitorToDeckLink.git
+cd MonitorToDeckLink
+```
+
+### Step 3 — Run the build script
+
+```bat
+build.bat
+```
+
+That's it. The script will:
+- Restore NuGet packages
+- Compile a single self-contained `MonitorToDeckLink.exe`
+- Drop it in the `publish\` folder
+- Offer to launch it immediately
+
+---
+
+## Building in Visual Studio (alternative)
+
+1. Install **Visual Studio Community 2022** (free) with the **.NET desktop development** workload
+2. Open `MonitorToDeckLink.csproj`
+3. Right-click project → **Add → COM Reference** → search **DeckLink** → check it → OK
+4. Set platform to **x64**
+5. **Build → Publish** using the `Release-x64` profile, or just press **F5** to run
+
+---
 
 ## How it Works
 
-- Uses **Windows Graphics Capture API** (DXGI) to capture any monitor
-- Feeds frames into the **DeckLink Output API** via COM interop
-- Supports common output formats: 1080p25, 1080p29.97, 1080p30, 1080p50, 1080p59.94, 1080p60, 2160p25, 2160p30, 2160p60
-- Color conversion from BGRA (screen) to UYVY (DeckLink) is done on CPU
+- Uses **DXGI Desktop Duplication** to capture any monitor at full speed via the GPU
+- Feeds frames into the **DeckLink Output API** via COM interop on a scheduled playback queue
+- Scales the captured image to match the selected output resolution if needed
+- Color converts BGRA (screen) → UYVY 4:2:2 (DeckLink) in BT.709
+
+## Supported Output Formats
+
+1080p 23.98 / 24 / 25 / 29.97 / 30 / 50 / 59.94 / 60  
+1080i 50 / 59.94 / 60  
+720p 50 / 59.94 / 60  
+2160p 23.98 / 25 / 29.97 / 30  
 
 ## Notes
 
-- The DeckLink COM interop files (`DeckLinkAPI_x64.tlb`) are installed with Desktop Video
-- Recommended: run as Administrator for full monitor capture access
+- The DeckLink Duo appears as **two separate devices** — run two instances of the app to drive both outputs simultaneously
+- Run as Administrator if monitor capture is denied
 - Frame rate is matched to the selected DeckLink output mode
