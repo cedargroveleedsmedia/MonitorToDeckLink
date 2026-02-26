@@ -411,7 +411,12 @@ namespace MonitorToDeckLink
                     }
                     deckOutput.EndFrameAccess(msg => { if (frameNumber == 0) Log(msg); });
                     if (frameNumber == 0) Log("Calling ScheduleVideoFrame...");
-                    int schedHr = deckOutput.ScheduleVideoFrame(framePtr, frameNumber * frameDuration, frameDuration, TimeSpan.TicksPerSecond);
+                    // Use 25fps timeScale=25 dur=1 instead of ticks
+                    long tsScale = (long)Math.Round(format.FrameRate * 1000);
+                    long tsDur   = 1000;
+                    int schedHr = deckOutput.ScheduleVideoFrame(framePtr,
+                        frameNumber * tsDur, tsDur, tsScale,
+                        msg => { if (frameNumber < 2) Log(msg); });
                     if (frameNumber == 0) Log($"ScheduleVideoFrame hr=0x{schedHr:X8}");
                     deckOutput.ReleaseFrame(framePtr);
                     if (frameNumber == 0) Log("Frame 0 complete.");
@@ -420,8 +425,9 @@ namespace MonitorToDeckLink
 
                 if (frameNumber == 0)
                 {
+                    long tsScale = (long)Math.Round(format.FrameRate * 1000);
                     Log("StartScheduledPlayback...");
-                    int startHr = deckOutput.StartScheduledPlayback(0, TimeSpan.TicksPerSecond, 1.0);
+                    int startHr = deckOutput.StartScheduledPlayback(0, tsScale, 1.0);
                     Log($"StartScheduledPlayback hr=0x{startHr:X8}");
                     if (startHr != 0) throw new Exception($"StartScheduledPlayback failed: 0x{startHr:X8}");
                 }
@@ -437,7 +443,8 @@ namespace MonitorToDeckLink
             }
 
             Log("Stopping...");
-            deckOutput.StopScheduledPlayback(0, TimeSpan.TicksPerSecond);
+            long tsScale2 = (long)Math.Round(format.FrameRate * 1000);
+            deckOutput.StopScheduledPlayback(0, tsScale2);
             deckOutput.DisableVideoOutput();
             Log("Done.");
         }

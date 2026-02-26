@@ -128,9 +128,20 @@ namespace MonitorToDeckLink
             Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)fvt[2])(frame);
         }
 
-        // Modern SDK slot 13
-        public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
-            Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frame, time, dur, scale);
+        public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale, System.Action<string> log)
+        {
+            log($"ScheduleVideoFrame params: frame=0x{frame:X} time={time} dur={dur} scale={scale}");
+            // Try slot 13 (modern SDK)
+            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frame, time, dur, scale);
+            log($"Slot[13] hr=0x{hr:X8}");
+            if (hr != 0)
+            {
+                // Try slot 12 (older SDK)
+                hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[12])(_ptr, frame, time, dur, scale);
+                log($"Slot[12] hr=0x{hr:X8}");
+            }
+            return hr;
+        }
 
         // Modern SDK slot 14
         public int GetBufferedVideoFrameCount(out uint count) =>
