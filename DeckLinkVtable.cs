@@ -1,6 +1,35 @@
+// IDeckLinkOutput - GUID 1A8077F1-9FE2-4533-8147-2294305E253F
+// Method order from TLB reflection on installed DeckLinkAPI64.dll (Desktop Video 15.1)
+// vtable slot = method_index + 3 (for IUnknown QI/AddRef/Release)
+//
+//  method[0]  DoesSupportVideoMode          = slot 3
+//  method[1]  GetDisplayMode                = slot 4
+//  method[2]  GetDisplayModeIterator        = slot 5
+//  method[3]  SetScreenPreviewCallback      = slot 6
+//  method[4]  EnableVideoOutput             = slot 7  ✓ S_OK confirmed
+//  method[5]  DisableVideoOutput            = slot 8
+//  method[6]  CreateVideoFrame              = slot 9
+//  method[7]  CreateVideoFrameWithBuffer    = slot 10
+//  method[8]  RowBytesForPixelFormat        = slot 11
+//  method[9]  CreateAncillaryData           = slot 12
+//  method[10] DisplayVideoFrameSync         = slot 13
+//  method[11] ScheduleVideoFrame            = slot 14
+//  method[12] SetScheduledFrameCompletionCallback = slot 15
+//  method[13] GetBufferedVideoFrameCount    = slot 16
+//  method[14] EnableAudioOutput             = slot 17
+//  method[15] DisableAudioOutput            = slot 18
+//  method[16] WriteAudioSamplesSync         = slot 19
+//  method[17] BeginAudioPreroll             = slot 20
+//  method[18] EndAudioPreroll               = slot 21
+//  method[19] ScheduleAudioSamples          = slot 22
+//  method[20] GetBufferedAudioSampleFrameCount = slot 23
+//  method[21] FlushBufferedAudioSamples     = slot 24
+//  method[22] SetAudioCallback              = slot 25
+//  method[23] StartScheduledPlayback        = slot 26
+//  method[24] StopScheduledPlayback         = slot 27
+
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace MonitorToDeckLink
 {
@@ -21,8 +50,8 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  StopPlaybackDel(IntPtr self, long stopTime, out long actualStop, long scale);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  EnableAudioOutputDel(IntPtr self, int sampleRate, int sampleType, uint channelCount, int streamType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  GetBytesDel(IntPtr self, out IntPtr buffer);
-
-        public Action<string>? Logger { get; set; }
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  StartAccessDel(IntPtr self, int accessType);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  EndAccessDel(IntPtr self, int accessType);
 
         public DeckLinkOutput(IntPtr ptr)
         {
@@ -39,6 +68,8 @@ namespace MonitorToDeckLink
 
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
             Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
+
+        public Action<string> Logger { get; set; }
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
             Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
@@ -57,30 +88,42 @@ namespace MonitorToDeckLink
 
         public int StopScheduledPlayback(long stop, long scale)
         {
-            long actualStop;
-            return Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out actualStop, scale);
+            Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out _, scale);
+            return 0;
         }
 
-        public int GetFrameBytes(IntPtr frame, out IntPtr bytes, Action<string>? log)
+        public int GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
         {
             bytes = IntPtr.Zero;
-            if (frame == IntPtr.Zero) return -1;
-            // Accessing the VideoFrame vtable directly to get the buffer pointer
-            void** fvt = *(void***)frame;
-            // GetBytes is index 5 in IDeckLinkVideoFrame, so Slot 8
-            return Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[8])(frame, out bytes);
+            Guid g = new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE");
+            int qhr = Marshal.QueryInterface(frame, ref g, out IntPtr buf);
+            if (qhr != 0) { log($"QI IDeckLinkVideoBuffer failed: 0x{qhr:X8}"); return qhr; }
+            void** bvt = *(void***)buf;
+            Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(buf, 2);
+            int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(buf, out bytes);
+            _bufPtr = buf; _bufVt = bvt;
+            return gbHr;
+        }
+
+        private IntPtr _bufPtr; private void** _bufVt;
+
+        public void EndFrameAccess()
+        {
+            if (_bufPtr == IntPtr.Zero) return;
+            Marshal.GetDelegateForFunctionPointer<EndAccessDel>((IntPtr)_bufVt[5])(_bufPtr, 2);
+            Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)_bufVt[2])(_bufPtr);
+            _bufPtr = IntPtr.Zero;
         }
 
         public void ReleaseFrame(IntPtr frame)
         {
-            if (frame == IntPtr.Zero) return;
             void** fvt = *(void***)frame;
             Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)fvt[2])(frame);
         }
 
         public string DumpVtable()
         {
-            var sb = new StringBuilder();
+            var sb = new System.Text.StringBuilder();
             for (int i = 0; i <= 27; i++)
                 sb.AppendLine($"  [{i:D2}] = 0x{(IntPtr)_vt[i]:X}");
             return sb.ToString();
