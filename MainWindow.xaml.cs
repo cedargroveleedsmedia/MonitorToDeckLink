@@ -250,7 +250,7 @@ namespace MonitorToDeckLink
                 }
                 catch (Exception ex) { tcs.SetException(ex); }
             });
-            staThread.SetApartmentState(ApartmentState.MTA);
+            staThread.SetApartmentState(ApartmentState.STA);
             staThread.IsBackground = true;
             staThread.Name = "DeckLinkCapture";
             staThread.Start();
@@ -321,7 +321,7 @@ namespace MonitorToDeckLink
             // DoesSupportVideoMode is at slot 3 (interface method 0)
             // Signature: (mode, width, height, frameRateMode, flags, out supported, out displayMode)
             // Just call EnableVideoOutput and log the result - if E_ACCESSDENIED the sub-device is input-only
-            Log($"Enabling video+audio output on device {cmbDeckLinks.SelectedIndex}: {format.Label}");
+            Log($"Enabling video+audio output: {format.Label}");
             // OBS enables audio output alongside video - some firmware requires both
             int audioHr = deckOutput.EnableAudioOutput();
             Log($"EnableAudioOutput returned: 0x{audioHr:X8}");
