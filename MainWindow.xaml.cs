@@ -446,9 +446,9 @@ namespace MonitorToDeckLink
                 if (frameNumber % (long)format.FrameRate == 0)
                 {
                     deckOutput.GetBufferedVideoFrameCount(out uint buf);
-                    string s = $"Running — frame {frameNumber}  buf:{buf}  timeouts:{timeouts}";
+                    string s = $"Running — frame {frameNumber}  buf:{buf}  timeouts:{timeouts}  cb:{callback.CompletedFrames}";
                     Dispatcher.Invoke(() => txtStatus.Text = s);
-                    if (frameNumber % ((long)format.FrameRate * 5) == 0) Log(s);
+                    Log(s);
                 }
             }
 
