@@ -338,15 +338,15 @@ namespace MonitorToDeckLink
             // Allocate frame pool ONCE before playback starts (like OBS does)
             // OBS pre-allocates 3 frames and reuses them in a ring
             const int POOL_SIZE = 3;
-            int    rowBytes = format.Width * 2;
+            int    rowBytes = format.Width * 4; // bmdFormat8BitBGRA = 4 bytes/pixel
             long   tsScale  = (long)Math.Round(format.FrameRate * 1000);
             var    frames   = new IntPtr[POOL_SIZE];
             var    frameBufs= new IntPtr[POOL_SIZE];
 
-            Log($"Allocating {POOL_SIZE} frames ({format.Width}x{format.Height} rowBytes={rowBytes})...");
+            Log($"Allocating {POOL_SIZE} frames ({format.Width}x{format.Height} rowBytes={rowBytes} BGRA)...");
             for (int i = 0; i < POOL_SIZE; i++)
             {
-                int hr = deckOutput.CreateVideoFrame(format.Width, format.Height, rowBytes, 0x32767975, 0, out frames[i]);
+                int hr = deckOutput.CreateVideoFrame(format.Width, format.Height, rowBytes, 0x42475241, 0, out frames[i]); // bmdFormat8BitBGRA
                 Log($"  CreateVideoFrame[{i}] hr=0x{hr:X8} ptr=0x{frames[i]:X}");
                 if (hr != 0 || frames[i] == IntPtr.Zero)
                     throw new Exception($"CreateVideoFrame[{i}] failed: 0x{hr:X8}");
@@ -398,7 +398,7 @@ namespace MonitorToDeckLink
                     timeouts++;
                 }
 
-                byte[] uyvy = new byte[rowBytes * format.Height];
+                byte[] uyvy = new byte[format.Width * 4 * format.Height]; // BGRA
                 if (got)
                 {
                     if (frameNumber == 0) Log("MapSubresource...");
@@ -408,7 +408,7 @@ namespace MonitorToDeckLink
                     try
                     {
                         fixed (byte* dst = uyvy)
-                            BgraToUyvy((byte*)mapped.DataPointer, mapped.RowPitch,
+                            BgraToBgra((byte*)mapped.DataPointer, mapped.RowPitch,
                                 monitor.Width, monitor.Height, dst, format.Width, format.Height);
                     }
                     finally { d3dDevice.ImmediateContext.UnmapSubresource(stagingTex, 0); }
@@ -457,6 +457,26 @@ namespace MonitorToDeckLink
             // Release frame pool
             foreach (var f in frames) if (f != IntPtr.Zero) deckOutput.ReleaseFrame(f);
             Log("Done.");
+        }
+
+        private static unsafe void BgraToBgra(
+            byte* src, int srcPitch, int srcW, int srcH,
+            byte* dst, int dstW, int dstH)
+        {
+            float sx = (float)srcW / dstW, sy = (float)srcH / dstH;
+            for (int y = 0; y < dstH; y++)
+            {
+                byte* sr = src + Math.Min((int)(y * sy), srcH - 1) * srcPitch;
+                byte* dr = dst + y * dstW * 4;
+                for (int x = 0; x < dstW; x++)
+                {
+                    byte* p = sr + Math.Min((int)(x * sx), srcW - 1) * 4;
+                    dr[x*4+0] = p[0]; // B
+                    dr[x*4+1] = p[1]; // G
+                    dr[x*4+2] = p[2]; // R
+                    dr[x*4+3] = p[3]; // A
+                }
+            }
         }
 
         private static unsafe void BgraToUyvy(

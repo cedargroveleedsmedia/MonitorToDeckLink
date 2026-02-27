@@ -1,31 +1,31 @@
-// IDeckLinkOutput CURRENT interface - GUID 1A8077F1 (Desktop Video 15.x)
-// Method order from TLB reflection on DeckLinkInterop.dll (generated from installed DeckLinkAPI64.dll)
-// Interface methods (add 3 for IUnknown slots to get vtable slot):
-//  [0] DoesSupportVideoMode           = slot 3
-//  [1] GetDisplayMode                 = slot 4
-//  [2] GetDisplayModeIterator         = slot 5
-//  [3] SetScreenPreviewCallback       = slot 6
-//  [4] EnableVideoOutput              = slot 7  ✓ confirmed S_OK
-//  [5] DisableVideoOutput             = slot 8
-//  [6] SetVideoOutputFrameMemoryAllocator = slot 9
-//  [7] CreateVideoFrame               = slot 10
-//  [8] CreateAncillaryData            = slot 11
-//  [9] DisplayVideoFrameSync          = slot 12
-// [10] ScheduleVideoFrame             = slot 13
-// [11] SetScheduledFrameCompletionCallback = slot 14  ✓ confirmed S_OK
-// [12] GetBufferedVideoFrameCount     = slot 15
-// [13] StartScheduledPlayback         = slot 16? — needs verification
-// ...
-// EnableAudioOutput confirmed at slot 16 via S_OK — so audio methods start at 16
-// That means StartScheduledPlayback must be after audio methods
-// From TLB: audio methods occupy slots 16-22, StartScheduledPlayback = slot 23? 
-// Use vtable dump: slots 12+ are near-sequential stubs except real ones
-// EnableAudioOutput=16 confirmed. Count audio methods from IDL:
-//   EnableAudioOutput, DisableAudioOutput, WriteAudioSamplesSync, 
-//   BeginAudioPreroll, EndAudioPreroll, ScheduleAudioSamples,
-//   GetBufferedAudioSampleFrameCount, FlushBufferedAudioSamples,
-//   SetAudioCallback = 9 audio methods = slots 16-24
-// StartScheduledPlayback = slot 25, StopScheduledPlayback = slot 26
+// IDeckLinkOutput - GUID 1A8077F1 (current, Desktop Video 15.x)
+// DEFINITIVE method order from TLB reflection on installed DeckLinkAPI64.dll
+// vtable slot = interface method index + 3 (IUnknown slots)
+//  [0] DoesSupportVideoMode          = slot 3
+//  [1] GetDisplayMode                = slot 4
+//  [2] GetDisplayModeIterator        = slot 5
+//  [3] SetScreenPreviewCallback      = slot 6
+//  [4] EnableVideoOutput             = slot 7
+//  [5] DisableVideoOutput            = slot 8
+//  [6] CreateVideoFrame              = slot 9
+//  [7] CreateVideoFrameWithBuffer    = slot 10
+//  [8] RowBytesForPixelFormat        = slot 11
+//  [9] CreateAncillaryData           = slot 12
+// [10] DisplayVideoFrameSync         = slot 13
+// [11] ScheduleVideoFrame            = slot 14
+// [12] SetScheduledFrameCompletionCallback = slot 15
+// [13] GetBufferedVideoFrameCount    = slot 16
+// [14] EnableAudioOutput             = slot 17
+// [15] DisableAudioOutput            = slot 18
+// [16] WriteAudioSamplesSync         = slot 19
+// [17] BeginAudioPreroll             = slot 20
+// [18] EndAudioPreroll               = slot 21
+// [19] ScheduleAudioSamples          = slot 22
+// [20] GetBufferedAudioSampleFrameCount = slot 23
+// [21] FlushBufferedAudioSamples     = slot 24
+// [22] SetAudioCallback              = slot 25
+// [23] StartScheduledPlayback        = slot 26
+// [24] StopScheduledPlayback         = slot 27
 
 using System;
 using System.Runtime.InteropServices;
@@ -65,27 +65,27 @@ namespace MonitorToDeckLink
         public int DisableVideoOutput() =>
             Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vt[8])(_ptr);
 
-        public int EnableAudioOutput() =>
-            Marshal.GetDelegateForFunctionPointer<EnableAudioOutputDel>((IntPtr)_vt[16])(_ptr, 48000, 16, 2, 1);
-
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
-            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
+            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[10])(_ptr, w, h, rb, fmt, flags, out frame);
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
-            Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frame, time, dur, scale);
+            Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
 
         public int SetFrameCallback(IntPtr cb) =>
-            Marshal.GetDelegateForFunctionPointer<SetCallbackDel>((IntPtr)_vt[14])(_ptr, cb);
+            Marshal.GetDelegateForFunctionPointer<SetCallbackDel>((IntPtr)_vt[15])(_ptr, cb);
 
         public int GetBufferedVideoFrameCount(out uint count) =>
-            Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[15])(_ptr, out count);
+            Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[16])(_ptr, out count);
+
+        public int EnableAudioOutput() =>
+            Marshal.GetDelegateForFunctionPointer<EnableAudioOutputDel>((IntPtr)_vt[17])(_ptr, 48000, 16, 2, 1);
 
         public int StartScheduledPlayback(long start, long scale, double speed) =>
-            Marshal.GetDelegateForFunctionPointer<StartPlaybackDel>((IntPtr)_vt[25])(_ptr, start, scale, speed);
+            Marshal.GetDelegateForFunctionPointer<StartPlaybackDel>((IntPtr)_vt[26])(_ptr, start, scale, speed);
 
         public int StopScheduledPlayback(long stop, long scale)
         {
-            Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[26])(_ptr, stop, out _, scale);
+            Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out _, scale);
             return 0;
         }
 
