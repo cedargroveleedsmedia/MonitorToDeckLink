@@ -69,13 +69,22 @@ namespace MonitorToDeckLink
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
             Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
 
+        public Action<string> Logger { get; set; }
+
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale)
         {
-            // ScheduleVideoFrame needs IDeckLinkVideoFrame, QI from IDeckLinkMutableVideoFrame
-            Guid videoFrameGuid = new Guid("6502091C-615F-4F51-BAF6-45C4256DD5B0"); // IDeckLinkVideoFrame (current)
+            // Try passing frame directly first (IDeckLinkMutableVideoFrame inherits IDeckLinkVideoFrame)
+            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
+            if (hr == 0) return hr;
+
+            // If that failed, try QI for IDeckLinkVideoFrame
+            Logger?.Invoke($"  ScheduleVideoFrame direct failed 0x{hr:X8}, trying QI...");
+            Guid videoFrameGuid = new Guid("6502091C-615F-4F51-BAF6-45C4256DD5B0");
             int qhr = Marshal.QueryInterface(frame, ref videoFrameGuid, out IntPtr vf);
-            if (qhr != 0) return qhr; // QI failed, return error
-            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, vf, time, dur, scale);
+            Logger?.Invoke($"  QI IDeckLinkVideoFrame: 0x{qhr:X8} ptr=0x{vf:X}");
+            if (qhr != 0) return qhr;
+            hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, vf, time, dur, scale);
+            Logger?.Invoke($"  ScheduleVideoFrame after QI: 0x{hr:X8}");
             Marshal.Release(vf);
             return hr;
         }

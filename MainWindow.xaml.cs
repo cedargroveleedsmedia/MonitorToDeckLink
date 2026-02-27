@@ -285,7 +285,7 @@ namespace MonitorToDeckLink
         private unsafe void CaptureLoop(MonitorInfo monitor, IntPtr outputRawPtr,
             OutputFormatInfo format, CancellationToken ct)
         {
-            using var deckOutput = new DeckLinkOutput(outputRawPtr);
+            using var deckOutput = new DeckLinkOutput(outputRawPtr) { Logger = msg => Log(msg) };
             Log($"DeckLinkOutput vtable:\n{deckOutput.DumpVtable()}");
             Log("Creating D3D11 device...");
             using var d3dDevice = new SharpDX.Direct3D11.Device(
