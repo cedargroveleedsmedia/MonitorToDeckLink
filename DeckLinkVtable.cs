@@ -61,24 +61,14 @@ namespace MonitorToDeckLink
             return Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out actualStop, scale);
         }
 
-        // FIXED: Removed QueryInterface to stop the 0x80004002 error
         public int GetFrameBytes(IntPtr frame, out IntPtr bytes, Action<string>? log)
         {
             bytes = IntPtr.Zero;
             if (frame == IntPtr.Zero) return -1;
-            
-            try 
-            {
-                void** bvt = *(void***)frame;
-                // GetBytes is Method[5] -> Slot 8 (3 Unknown + 5 Methods)
-                // We call it directly on the frame pointer provided by CreateVideoFrame
-                return Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[8])(frame, out bytes);
-            }
-            catch (Exception ex)
-            {
-                log?.Invoke($"Direct GetBytes failed: {ex.Message}");
-                return -1;
-            }
+            // Accessing the VideoFrame vtable directly to get the buffer pointer
+            void** fvt = *(void***)frame;
+            // GetBytes is index 5 in IDeckLinkVideoFrame, so Slot 8
+            return Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[8])(frame, out bytes);
         }
 
         public void ReleaseFrame(IntPtr frame)
