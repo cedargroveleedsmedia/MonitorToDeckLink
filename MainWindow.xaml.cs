@@ -222,11 +222,10 @@ namespace MonitorToDeckLink
                             // Try multiple IDeckLinkOutput GUIDs to find the one matching Desktop Video 15.1
                             IntPtr iunk = Marshal.GetIUnknownForObject(dev);
                             // GUIDs from different SDK versions
-                            // Use v14_2_1 GUID - EnableVideoOutput confirmed at slot 7
-                            // v15 GUID (CC5C8A6E) has different layout and crashes on slot 8
-                            Guid preferredGuid = new Guid("1A8077F1-9FE2-4533-8147-2294305E253F");
+                            // Use current interface GUID - clean sequential vtable confirmed
+                            Guid preferredGuid = new Guid("CC5C8A6E-3F2F-4B3A-87EA-FD78AF300564");
                             int qiHr = Marshal.QueryInterface(iunk, ref preferredGuid, out IntPtr outPtr);
-                            Log($"QI IDeckLinkOutput v14_2_1: hr=0x{qiHr:X8} ptr=0x{outPtr:X}");
+                            Log($"QI IDeckLinkOutput (current): hr=0x{qiHr:X8} ptr=0x{outPtr:X}");
                             Marshal.Release(iunk);
                             if (qiHr == 0 && outPtr != IntPtr.Zero)
                             {
