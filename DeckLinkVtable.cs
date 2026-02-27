@@ -21,6 +21,9 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  EnableAudioOutputDel(IntPtr self, int sampleRate, int sampleType, uint channelCount, int streamType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  GetBytesDel(IntPtr self, out IntPtr buffer);
 
+        // Required by your MainWindow
+        public Action<string> Logger { get; set; }
+
         public DeckLinkOutput(IntPtr ptr)
         {
             _ptr = ptr;
@@ -46,6 +49,9 @@ namespace MonitorToDeckLink
         public int GetBufferedVideoFrameCount(out uint count) =>
             Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[16])(_ptr, out count);
 
+        public int EnableAudioOutput() =>
+            Marshal.GetDelegateForFunctionPointer<EnableAudioOutputDel>((IntPtr)_vt[17])(_ptr, 48000, 16, 2, 1);
+
         public int StartScheduledPlayback(long start, long scale, double speed) =>
             Marshal.GetDelegateForFunctionPointer<StartPlaybackDel>((IntPtr)_vt[26])(_ptr, start, scale, speed);
 
@@ -55,19 +61,32 @@ namespace MonitorToDeckLink
             return 0;
         }
 
-        public int GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
+        public int GetFrameBytes(IntPtr frame, out IntPtr bytes, Action<string> log)
         {
             bytes = IntPtr.Zero;
-            // IDeckLinkVideoFrame GUID
-            Guid g = new Guid("3F7103D0-4D01-4323-896B-53C7E950BD64");
+            Guid g = new Guid("CF9EB134-0374-4C5B-95FA-1EC14819FF62"); // IDeckLinkVideoFrame
             int qhr = Marshal.QueryInterface(frame, ref g, out IntPtr buf);
             if (qhr != 0) { log?.Invoke($"QI IDeckLinkVideoFrame failed: 0x{qhr:X8}"); return qhr; }
             
             void** bvt = *(void***)buf;
-            // GetBytes is Method[5] -> Slot 8 in the VideoFrame vtable
             int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[8])(buf, out bytes);
             Marshal.Release(buf);
             return gbHr;
+        }
+
+        public void ReleaseFrame(IntPtr frame)
+        {
+            if (frame == IntPtr.Zero) return;
+            void** fvt = *(void***)frame;
+            Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)fvt[2])(frame);
+        }
+
+        public string DumpVtable()
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i <= 27; i++)
+                sb.AppendLine($"  [{i:D2}] = 0x{(IntPtr)_vt[i]:X}");
+            return sb.ToString();
         }
 
         public void Dispose()
