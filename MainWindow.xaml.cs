@@ -401,17 +401,7 @@ namespace MonitorToDeckLink
                     0x32767975, 0,
                     out IntPtr framePtr);
 
-                if (frameNumber == 0)
-                {
-                    Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X} slot={deckOutput.CreateSlot}");
-                    if (framePtr != IntPtr.Zero)
-                    {
-                        Guid mvfG = new Guid("69E2639F-40DA-4E19-B6F2-20ACE815C390");
-                        int qr = Marshal.QueryInterface(framePtr, ref mvfG, out IntPtr mvfP);
-                        Log($"  QI IDeckLinkMutableVideoFrame: 0x{qr:X8}");
-                        if (qr == 0) Marshal.Release(mvfP);
-                    }
-                }
+                if (frameNumber == 0) Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
 
                 if (createHr == 0 && framePtr != IntPtr.Zero)
                 {
@@ -422,14 +412,23 @@ namespace MonitorToDeckLink
                             System.Buffer.MemoryCopy(src, (void*)dst, uyvy.Length, uyvy.Length);
                     }
                     deckOutput.EndFrameAccess();
-                    // Try DisplayVideoFrameSync (slot 13) - simpler than scheduled
-                    int schedHr = deckOutput.DisplayVideoFrameSync(framePtr);
-                    if (frameNumber < 3) Log($"DisplayVideoFrameSync[{frameNumber}] hr=0x{schedHr:X8}");
+                    int schedHr = deckOutput.ScheduleVideoFrame(framePtr,
+                        frameNumber * 1000L, 1000L, (long)Math.Round(format.FrameRate * 1000));
+                    if (frameNumber < 3) Log($"ScheduleVideoFrame[{frameNumber}] hr=0x{schedHr:X8}");
                     deckOutput.ReleaseFrame(framePtr);
                 }
                 else if (frameNumber < 3) Log($"CreateVideoFrame hr=0x{createHr:X8}");
 
                 frameNumber++;
+
+                // Start playback after pre-buffering 2 frames
+                if (frameNumber == 2)
+                {
+                    long tsScale = (long)Math.Round(format.FrameRate * 1000);
+                    Log("StartScheduledPlayback (after pre-buffering)...");
+                    int startHr = deckOutput.StartScheduledPlayback(0, tsScale, 1.0);
+                    Log($"StartScheduledPlayback hr=0x{startHr:X8}");
+                }
 
                 if (frameNumber % (long)format.FrameRate == 0)
                 {

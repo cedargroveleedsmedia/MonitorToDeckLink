@@ -1,38 +1,35 @@
-// Pure vtable P/Invoke - Desktop Video SDK 15.x layout
-// Confirmed from sdk-doc.blackmagicdesign.com section 2.5.3 method order:
+// Pure vtable P/Invoke for IDeckLinkOutput_v14_2_1 (GUID: 1A8077F1-9FE2-4533-8147-2294305E253F)
+// Method order confirmed from tlbimp reflection on Desktop Video 15.1 DeckLinkAPI64.dll
 //
-// IUnknown: [0]=QI [1]=AddRef [2]=Release
-// IDeckLinkOutput:
-// [3]  DoesSupportVideoMode
-// [4]  GetDisplayMode
-// [5]  GetDisplayModeIterator
-// [6]  SetScreenPreviewCallback
-// [7]  EnableVideoOutput          *** CONFIRMED WORKING ***
-// [8]  DisableVideoOutput
-// [9]  CreateVideoFrame           *** CONFIRMED WORKING ***
-// [10] CreateVideoFrameWithBuffer  (NEW in 15.x)
-// [11] RowBytesForPixelFormat      (NEW in 15.x)
-// [12] CreateAncillaryData         (NEW in 15.x)
-// [13] DisplayVideoFrameSync
-// [14] ScheduleVideoFrame
-// [15] SetScheduledFrameCompletionCallback
-// [16] GetBufferedVideoFrameCount
-// [17] EnableAudioOutput
-// [18] DisableAudioOutput
-// [19] WriteAudioSamplesSync
-// [20] BeginAudioPreroll
-// [21] EndAudioPreroll
-// [22] ScheduleAudioSamples
-// [23] GetBufferedAudioSampleFrameCount
-// [24] FlushBufferedAudioSamples
-// [25] SetAudioCallback
-// [26] StartScheduledPlayback
-// [27] StopScheduledPlayback
-// [28] IsScheduledPlaybackRunning
-// [29] GetScheduledStreamTime
-// [30] GetReferenceStatus
-// [31] GetHardwareReferenceClock
-// [32] GetFrameCompletionReferenceTimestamp
+// IUnknown:                [0]=QI [1]=AddRef [2]=Release
+// IDeckLinkOutput_v14_2_1 interface methods (add 3 for vtable slot):
+//  [0] DoesSupportVideoMode      = slot 3
+//  [1] GetDisplayMode            = slot 4
+//  [2] GetDisplayModeIterator    = slot 5
+//  [3] SetScreenPreviewCallback  = slot 6
+//  [4] EnableVideoOutput         = slot 7  *** CONFIRMED ***
+//  [5] DisableVideoOutput        = slot 8
+//  [6] SetVideoOutputFrameMemoryAllocator = slot 9  (was incorrectly used as CreateVideoFrame)
+//  [7] CreateVideoFrame          = slot 10 *** FIXED ***
+//  [8] CreateAncillaryData       = slot 11
+//  [9] DisplayVideoFrameSync     = slot 12 *** FIXED ***
+// [10] ScheduleVideoFrame        = slot 13 *** FIXED ***
+// [11] SetScheduledFrameCompletionCallback = slot 14
+// [12] GetBufferedVideoFrameCount = slot 15
+// [13] EnableAudioOutput         = slot 16
+// [14] DisableAudioOutput        = slot 17
+// [15] WriteAudioSamplesSync     = slot 18
+// [16] BeginAudioPreroll         = slot 19
+// [17] EndAudioPreroll           = slot 20
+// [18] ScheduleAudioSamples      = slot 21
+// [19] GetBufferedAudioSampleFrameCount = slot 22
+// [20] FlushBufferedAudioSamples = slot 23
+// [21] SetAudioCallback          = slot 24
+// [22] StartScheduledPlayback    = slot 25 *** FIXED ***
+// [23] StopScheduledPlayback     = slot 26 *** FIXED ***
+// [24] IsScheduledPlaybackRunning= slot 27
+// [25] GetScheduledStreamTime    = slot 28
+// ...
 
 using System;
 using System.Runtime.InteropServices;
@@ -73,36 +70,27 @@ namespace MonitorToDeckLink
         public int DisableVideoOutput() =>
             Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vt[8])(_ptr);
 
-        // SDK docs 2.5.3 method order for IDeckLinkOutput (v14_2_1 GUID 1A8077F1):
-        // EnableVideoOutput=[7] confirmed. After that:
-        // [8]=DisableVideoOutput [9]=SetVideoOutputFrameMemoryAllocator [10]=CreateVideoFrame
-        // But previously slot 9 returned a COM object (IDeckLinkVideoBuffer) not a frame.
-        // Try slot 10 as CreateVideoFrame.
-        public int CreateSlot => 10;
-
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
             Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[10])(_ptr, w, h, rb, fmt, flags, out frame);
 
-        // DisplayVideoFrameSync - simpler than scheduled, use as fallback
         public int DisplayVideoFrameSync(IntPtr frame) =>
-            Marshal.GetDelegateForFunctionPointer<DisplayVideoFrameSyncDel>((IntPtr)_vt[13])(_ptr, frame);
+            Marshal.GetDelegateForFunctionPointer<DisplayVideoFrameSyncDel>((IntPtr)_vt[12])(_ptr, frame);
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
-            Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
+            Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frame, time, dur, scale);
 
         public int GetBufferedVideoFrameCount(out uint count) =>
-            Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[16])(_ptr, out count);
+            Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[15])(_ptr, out count);
 
         public int StartScheduledPlayback(long start, long scale, double speed) =>
-            Marshal.GetDelegateForFunctionPointer<StartPlaybackDel>((IntPtr)_vt[26])(_ptr, start, scale, speed);
+            Marshal.GetDelegateForFunctionPointer<StartPlaybackDel>((IntPtr)_vt[25])(_ptr, start, scale, speed);
 
         public int StopScheduledPlayback(long stop, long scale)
         {
-            Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out _, scale);
+            Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[26])(_ptr, stop, out _, scale);
             return 0;
         }
 
-        // IDeckLinkVideoBuffer access for GetBytes
         public void GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
         {
             bytes = IntPtr.Zero;
@@ -110,7 +98,6 @@ namespace MonitorToDeckLink
             int qiHr = Marshal.QueryInterface(frame, ref bufGuid, out IntPtr bufPtr);
             if (qiHr != 0 || bufPtr == IntPtr.Zero) { log($"QI IDeckLinkVideoBuffer failed: 0x{qiHr:X8}"); return; }
             void** bvt = *(void***)bufPtr;
-            // [3]=GetBytes [4]=StartAccess [5]=EndAccess
             Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(bufPtr, bmdBufferAccessWrite);
             Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
             _lastBufPtr = bufPtr;
@@ -120,7 +107,7 @@ namespace MonitorToDeckLink
         private IntPtr _lastBufPtr;
         private void** _lastBufVt;
 
-        public void EndFrameAccess(System.Action<string>? log = null)
+        public void EndFrameAccess()
         {
             if (_lastBufPtr != IntPtr.Zero)
             {
