@@ -1,6 +1,3 @@
-// IDeckLinkOutput - GUID 1A8077F1-9FE2-4533-8147-2294305E253F
-// Method order from TLB reflection on installed DeckLinkAPI64.dll (Desktop Video 15.1)
-
 using System;
 using System.Runtime.InteropServices;
 
@@ -42,7 +39,7 @@ namespace MonitorToDeckLink
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
             Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
 
-        public Action<string> Logger { get; set; }
+        public Action<string>? Logger { get; set; }
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
             Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
