@@ -37,6 +37,8 @@ namespace MonitorToDeckLink
         public int Width { get; set; }
         public int Height { get; set; }
         public double FrameRate { get; set; }
+        public long TsScale { get; set; }
+        public long TsDuration { get; set; }
         public override string ToString() => Label;
     }
 
@@ -340,7 +342,8 @@ namespace MonitorToDeckLink
             // OBS pre-allocates 3 frames and reuses them in a ring
             const int POOL_SIZE = 3;
             int    rowBytes = format.Width * 2; // bmdFormat8BitYUV (UYVY) = 2 bytes/pixel
-            long   tsScale  = (long)Math.Round(format.FrameRate * 1000);
+            long   tsScale  = format.TsScale;
+            long   tsDur     = format.TsDuration;
             var    frames   = new IntPtr[POOL_SIZE];
             var    frameBufs= new IntPtr[POOL_SIZE];
 
@@ -431,7 +434,7 @@ namespace MonitorToDeckLink
                 }
 
                 int schedHr = deckOutput.ScheduleVideoFrame(framePtr,
-                    frameNumber * 1000L, 1000L, tsScale);
+                    frameNumber * tsDur, tsDur, tsScale);
                 if (frameNumber < 3) Log($"ScheduleVideoFrame[{frameNumber}] hr=0x{schedHr:X8}");
 
                 frameNumber++;
