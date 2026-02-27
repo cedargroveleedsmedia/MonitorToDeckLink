@@ -221,11 +221,10 @@ namespace MonitorToDeckLink
                             Log($"STA thread got device: {n}");
                             // Try multiple IDeckLinkOutput GUIDs to find the one matching Desktop Video 15.1
                             IntPtr iunk = Marshal.GetIUnknownForObject(dev);
-                            // GUIDs from different SDK versions
-                            // Use current interface GUID - clean sequential vtable confirmed
-                            Guid preferredGuid = new Guid("CC5C8A6E-3F2F-4B3A-87EA-FD78AF300564");
+                            // Correct GUID from OBS SDK headers DeckLinkAPI.idl/DeckLinkAPI.h
+                            Guid preferredGuid = new Guid("BE2D9020-461E-442F-84B7-E949CB953B9D");
                             int qiHr = Marshal.QueryInterface(iunk, ref preferredGuid, out IntPtr outPtr);
-                            Log($"QI IDeckLinkOutput (current): hr=0x{qiHr:X8} ptr=0x{outPtr:X}");
+                            Log($"QI IDeckLinkOutput (BE2D9020): hr=0x{qiHr:X8} ptr=0x{outPtr:X}");
                             Marshal.Release(iunk);
                             if (qiHr == 0 && outPtr != IntPtr.Zero)
                             {
