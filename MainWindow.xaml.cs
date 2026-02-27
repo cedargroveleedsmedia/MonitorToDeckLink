@@ -82,6 +82,17 @@ namespace MonitorToDeckLink
             PopulateFormats();
         }
 
+        // --- RESTORED EVENT HANDLERS ---
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e) => StopCapture();
+        private void btnClearLog_Click(object sender, RoutedEventArgs e) => txtLog.Text = "";
+        private void btnCopyLog_Click(object sender, RoutedEventArgs e)
+        {
+            try { Clipboard.SetText(txtLog.Text); SetStatus("Log copied to clipboard."); } catch { }
+        }
+        private void cmbMonitors_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
+        private void cmbDeckLinks_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
+        // ------------------------------
+
         private void Log(string msg)
         {
             string line = $"[{DateTime.Now:HH:mm:ss.fff}] {msg}";
@@ -144,7 +155,7 @@ namespace MonitorToDeckLink
         private void PopulateFormats()
         {
             cmbFormats.ItemsSource = _formats;
-            cmbFormats.SelectedIndex = 10; // Default to 1080p60
+            cmbFormats.SelectedIndex = 10;
         }
 
         private void btnStart_Click(object sender, RoutedEventArgs e)
@@ -194,9 +205,16 @@ namespace MonitorToDeckLink
         private void StopCapture()
         {
             _cts?.Cancel();
-            btnStart.IsEnabled = true;
-            btnStop.IsEnabled = false;
+            Dispatcher.Invoke(() => {
+                btnStart.IsEnabled = true;
+                btnStop.IsEnabled = false;
+            });
         }
+
+        private void SetStatus(string msg, bool isError = false) => Dispatcher.Invoke(() =>
+        {
+            txtStatus.Text = msg;
+        });
 
         private unsafe void CaptureLoop(MonitorInfo monitor, IntPtr outputRawPtr, OutputFormatInfo format, CancellationToken ct)
         {
@@ -204,7 +222,6 @@ namespace MonitorToDeckLink
             Log($"VTable Check:\n{deckOutput.DumpVtable()}");
 
             using var d3dDevice = new SharpDX.Direct3D11.Device(SharpDX.Direct3D.DriverType.Hardware, DeviceCreationFlags.BgraSupport);
-            // Logic to find correct DXGI Output based on Monitor DeviceName
             using var factory = new Factory1();
             Output1? dupeOutput = null;
             foreach (var adapter in factory.Adapters1)
@@ -222,7 +239,7 @@ namespace MonitorToDeckLink
                 adapter.Dispose();
             }
 
-            if (dupeOutput == null) throw new Exception("Monitor not found for duplication.");
+            if (dupeOutput == null) throw new Exception("Monitor not found.");
             using var deskDupe = dupeOutput.DuplicateOutput(d3dDevice);
             
             using var stagingTex = new Texture2D(d3dDevice, new Texture2DDescription
@@ -246,15 +263,13 @@ namespace MonitorToDeckLink
 
             for (int i = 0; i < POOL_SIZE; i++)
             {
-                // CRITICAL FIX: Use 0x32767579 for UYVY ('2vuy')
+                // FIX: 0x32767579 = '2vuy' (UYVY)
                 int hr = deckOutput.CreateVideoFrame(format.Width, format.Height, format.Width * 2, 0x32767579, 0, out frames[i]);
-                if (hr != 0) throw new Exception($"CreateFrame {i} failed: 0x{hr:X8}");
+                if (hr != 0) throw new Exception($"CreateFrame failed: 0x{hr:X8}");
                 deckOutput.GetFrameBytes(frames[i], out frameBufs[i], msg => Log(msg));
             }
 
-            Stopwatch sw = Stopwatch.StartNew();
             long frameCount = 0;
-
             while (!ct.IsCancellationRequested)
             {
                 if (deskDupe.TryAcquireNextFrame(10, out _, out SharpDX.DXGI.Resource res).Success)
@@ -267,10 +282,7 @@ namespace MonitorToDeckLink
                     var mapped = d3dDevice.ImmediateContext.MapSubresource(stagingTex, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
                     int slot = (int)(frameCount % POOL_SIZE);
                     
-                    fixed (byte* d = new byte[format.Width * 2 * format.Height]) // Temporary buffer or direct copy
-                    {
-                        BgraToUyvy((byte*)mapped.DataPointer, mapped.RowPitch, monitor.Width, monitor.Height, (byte*)frameBufs[slot], format.Width, format.Height);
-                    }
+                    BgraToUyvy((byte*)mapped.DataPointer, mapped.RowPitch, monitor.Width, monitor.Height, (byte*)frameBufs[slot], format.Width, format.Height);
                     
                     d3dDevice.ImmediateContext.UnmapSubresource(stagingTex, 0);
 
@@ -294,13 +306,11 @@ namespace MonitorToDeckLink
                 {
                     byte* p0 = sRow + (x * 4);
                     byte* p1 = sRow + ((x + 1) * 4);
-                    
-                    // Simple YUV conversion
-                    dst[0] = 128; // U
-                    dst[1] = p0[1]; // Y0
-                    dst[2] = 128; // V
-                    dst[3] = p1[1]; // Y1
-                    dst += 4;
+                    dRow[0] = 128;   // U
+                    dRow[1] = p0[1]; // Y0
+                    dRow[2] = 128;   // V
+                    dRow[3] = p1[1]; // Y1
+                    dRow += 4;
                 }
             }
         }
