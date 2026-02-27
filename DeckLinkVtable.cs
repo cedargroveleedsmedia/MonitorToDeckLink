@@ -52,10 +52,6 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartPlaybackDel(IntPtr self, long startTime, long scale, double speed);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StopPlaybackDel(IntPtr self, long stopTime, out long actualStop, long scale);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetBytesDel(IntPtr self, out IntPtr buffer);
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int StartAccessDel(IntPtr self, int accessType);
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int EndAccessDel(IntPtr self, int accessType);
-
-        const int bmdBufferAccessWrite = 2;
 
         public DeckLinkOutput(IntPtr ptr)
         {
@@ -94,34 +90,16 @@ namespace MonitorToDeckLink
         public void GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
         {
             bytes = IntPtr.Zero;
-            Guid bufGuid = new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE");
-            int qiHr = Marshal.QueryInterface(frame, ref bufGuid, out IntPtr bufPtr);
-            log($"QI IDeckLinkVideoBuffer hr=0x{qiHr:X8}");
-            if (qiHr != 0 || bufPtr == IntPtr.Zero) return;
-            void** bvt = *(void***)bufPtr;
-            // IDeckLinkVideoBuffer: [0]=QI [1]=AddRef [2]=Release [3]=GetBytes [4]=StartAccess [5]=EndAccess
-            // Probe: log vtable addresses to verify
-            log($"  bufVt[3]=0x{(IntPtr)bvt[3]:X} [4]=0x{(IntPtr)bvt[4]:X} [5]=0x{(IntPtr)bvt[5]:X}");
-            int saHr = Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(bufPtr, bmdBufferAccessWrite);
-            log($"  StartAccess hr=0x{saHr:X8}");
-            int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
-            log($"  GetBytes hr=0x{gbHr:X8} ptr=0x{bytes:X}");
-            _lastBufPtr = bufPtr;
-            _lastBufVt  = bvt;
+            // IDeckLinkMutableVideoFrame_v14_2_1 has GetBytes at interface method [5] = vtable slot 8
+            // (3 IUnknown slots + 5 interface methods before GetBytes)
+            // No need for IDeckLinkVideoBuffer QI - call GetBytes directly on the frame
+            void** fvt = *(void***)frame;
+            log($"  frameVt[8]=0x{(IntPtr)fvt[8]:X}");
+            int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)fvt[8])(frame, out bytes);
+            log($"  GetBytes(direct) hr=0x{gbHr:X8} ptr=0x{bytes:X}");
         }
 
-        private IntPtr _lastBufPtr;
-        private void** _lastBufVt;
-
-        public void EndFrameAccess()
-        {
-            if (_lastBufPtr != IntPtr.Zero)
-            {
-                Marshal.GetDelegateForFunctionPointer<EndAccessDel>((IntPtr)_lastBufVt[5])(_lastBufPtr, bmdBufferAccessWrite);
-                Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)_lastBufVt[2])(_lastBufPtr);
-                _lastBufPtr = IntPtr.Zero;
-            }
-        }
+        public void EndFrameAccess() { } // no-op: direct GetBytes needs no access protocol
 
         public void ReleaseFrame(IntPtr frame)
         {
