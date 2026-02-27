@@ -405,7 +405,7 @@ namespace MonitorToDeckLink
 
                 if (createHr == 0 && framePtr != IntPtr.Zero)
                 {
-                    deckOutput.GetFrameBytes(framePtr, out IntPtr dst, msg => Log(msg));
+                    deckOutput.GetFrameBytes(framePtr, out IntPtr dst, msg => { if (frameNumber < 2) Log(msg); });
                     if (dst != IntPtr.Zero)
                     {
                         fixed (byte* src = uyvy)

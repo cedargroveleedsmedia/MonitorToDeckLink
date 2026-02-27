@@ -96,10 +96,16 @@ namespace MonitorToDeckLink
             bytes = IntPtr.Zero;
             Guid bufGuid = new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE");
             int qiHr = Marshal.QueryInterface(frame, ref bufGuid, out IntPtr bufPtr);
-            if (qiHr != 0 || bufPtr == IntPtr.Zero) { log($"QI IDeckLinkVideoBuffer failed: 0x{qiHr:X8}"); return; }
+            log($"QI IDeckLinkVideoBuffer hr=0x{qiHr:X8}");
+            if (qiHr != 0 || bufPtr == IntPtr.Zero) return;
             void** bvt = *(void***)bufPtr;
-            Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(bufPtr, bmdBufferAccessWrite);
-            Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
+            // IDeckLinkVideoBuffer: [0]=QI [1]=AddRef [2]=Release [3]=GetBytes [4]=StartAccess [5]=EndAccess
+            // Probe: log vtable addresses to verify
+            log($"  bufVt[3]=0x{(IntPtr)bvt[3]:X} [4]=0x{(IntPtr)bvt[4]:X} [5]=0x{(IntPtr)bvt[5]:X}");
+            int saHr = Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(bufPtr, bmdBufferAccessWrite);
+            log($"  StartAccess hr=0x{saHr:X8}");
+            int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(bufPtr, out bytes);
+            log($"  GetBytes hr=0x{gbHr:X8} ptr=0x{bytes:X}");
             _lastBufPtr = bufPtr;
             _lastBufVt  = bvt;
         }
