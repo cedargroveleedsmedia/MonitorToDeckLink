@@ -72,7 +72,7 @@ namespace MonitorToDeckLink
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale)
         {
             // ScheduleVideoFrame needs IDeckLinkVideoFrame, QI from IDeckLinkMutableVideoFrame
-            Guid videoFrameGuid = new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17");
+            Guid videoFrameGuid = new Guid("6502091C-615F-4F51-BAF6-45C4256DD5B0"); // IDeckLinkVideoFrame (current)
             int qhr = Marshal.QueryInterface(frame, ref videoFrameGuid, out IntPtr vf);
             if (qhr != 0) return qhr; // QI failed, return error
             int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, vf, time, dur, scale);
