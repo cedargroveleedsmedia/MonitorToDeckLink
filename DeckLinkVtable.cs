@@ -61,24 +61,23 @@ namespace MonitorToDeckLink
             return Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out actualStop, scale);
         }
 
+        // FIXED: Removed QueryInterface to stop the 0x80004002 error
         public int GetFrameBytes(IntPtr frame, out IntPtr bytes, Action<string>? log)
         {
             bytes = IntPtr.Zero;
-            // IDeckLinkVideoFrame GUID
-            Guid g = new Guid("3F7103D0-4D01-4323-896B-53C7E950BD64");
-            int qhr = Marshal.QueryInterface(frame, ref g, out IntPtr buf);
-            if (qhr != 0) { log?.Invoke($"QI IDeckLinkVideoFrame failed: 0x{qhr:X8}"); return qhr; }
+            if (frame == IntPtr.Zero) return -1;
             
             try 
             {
-                void** bvt = *(void***)buf;
+                void** bvt = *(void***)frame;
                 // GetBytes is Method[5] -> Slot 8 (3 Unknown + 5 Methods)
-                int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[8])(buf, out bytes);
-                return gbHr;
+                // We call it directly on the frame pointer provided by CreateVideoFrame
+                return Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[8])(frame, out bytes);
             }
-            finally 
+            catch (Exception ex)
             {
-                Marshal.Release(buf);
+                log?.Invoke($"Direct GetBytes failed: {ex.Message}");
+                return -1;
             }
         }
 
