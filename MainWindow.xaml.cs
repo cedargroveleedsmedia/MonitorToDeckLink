@@ -339,15 +339,15 @@ namespace MonitorToDeckLink
             // Allocate frame pool ONCE before playback starts (like OBS does)
             // OBS pre-allocates 3 frames and reuses them in a ring
             const int POOL_SIZE = 3;
-            int    rowBytes = format.Width * 4; // bmdFormat8BitBGRA = 4 bytes/pixel
+            int    rowBytes = format.Width * 2; // bmdFormat8BitYUV (UYVY) = 2 bytes/pixel
             long   tsScale  = (long)Math.Round(format.FrameRate * 1000);
             var    frames   = new IntPtr[POOL_SIZE];
             var    frameBufs= new IntPtr[POOL_SIZE];
 
-            Log($"Allocating {POOL_SIZE} frames ({format.Width}x{format.Height} rowBytes={rowBytes} BGRA)...");
+            Log($"Allocating {POOL_SIZE} frames ({format.Width}x{format.Height} rowBytes={rowBytes} UYVY)...");
             for (int i = 0; i < POOL_SIZE; i++)
             {
-                int hr = deckOutput.CreateVideoFrame(format.Width, format.Height, rowBytes, 0x42475241, 0, out frames[i]); // bmdFormat8BitBGRA
+                int hr = deckOutput.CreateVideoFrame(format.Width, format.Height, rowBytes, 0x32767975, 0, out frames[i]); // bmdFormat8BitYUV
                 Log($"  CreateVideoFrame[{i}] hr=0x{hr:X8} ptr=0x{frames[i]:X}");
                 if (hr != 0 || frames[i] == IntPtr.Zero)
                     throw new Exception($"CreateVideoFrame[{i}] failed: 0x{hr:X8}");
@@ -399,7 +399,7 @@ namespace MonitorToDeckLink
                     timeouts++;
                 }
 
-                byte[] uyvy = new byte[format.Width * 4 * format.Height]; // BGRA
+                byte[] uyvy = new byte[format.Width * 2 * format.Height]; // UYVY
                 if (got)
                 {
                     if (frameNumber == 0) Log("MapSubresource...");
@@ -409,7 +409,7 @@ namespace MonitorToDeckLink
                     try
                     {
                         fixed (byte* dst = uyvy)
-                            BgraToBgra((byte*)mapped.DataPointer, mapped.RowPitch,
+                            BgraToUyvy((byte*)mapped.DataPointer, mapped.RowPitch,
                                 monitor.Width, monitor.Height, dst, format.Width, format.Height);
                     }
                     finally { d3dDevice.ImmediateContext.UnmapSubresource(stagingTex, 0); }
