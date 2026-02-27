@@ -71,16 +71,8 @@ namespace MonitorToDeckLink
 
         public Action<string> Logger { get; set; }
 
-        public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale)
-        {
-            // TLB says slot 14, but vtable shows address swap at 14/15 suggesting actual slot may be 13
-            // Try both and log results
-            int hr13 = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frame, time, dur, scale);
-            Logger?.Invoke($"  slot13 hr=0x{hr13:X8}");
-            int hr14 = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
-            Logger?.Invoke($"  slot14 hr=0x{hr14:X8}");
-            return hr13 == 0 ? hr13 : hr14;
-        }
+        public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
+            Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
 
         public int SetFrameCallback(IntPtr cb) =>
             Marshal.GetDelegateForFunctionPointer<SetCallbackDel>((IntPtr)_vt[15])(_ptr, cb);
