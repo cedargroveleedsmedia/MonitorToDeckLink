@@ -102,7 +102,7 @@ namespace MonitorToDeckLink
         private void btnClearLog_Click(object sender, RoutedEventArgs e) => txtLog.Text = "";
         private void btnCopyLog_Click(object sender, RoutedEventArgs e)
         {
-            Clipboard.SetText(txtLog.Text);
+            try { Clipboard.SetText(txtLog.Text); } catch { /* clipboard busy */ }
             SetStatus("Log copied to clipboard.");
         }
 
