@@ -1,32 +1,5 @@
 // IDeckLinkOutput - GUID 1A8077F1-9FE2-4533-8147-2294305E253F
 // Method order from TLB reflection on installed DeckLinkAPI64.dll (Desktop Video 15.1)
-// vtable slot = method_index + 3 (for IUnknown QI/AddRef/Release)
-//
-//  method[0]  DoesSupportVideoMode          = slot 3
-//  method[1]  GetDisplayMode                = slot 4
-//  method[2]  GetDisplayModeIterator        = slot 5
-//  method[3]  SetScreenPreviewCallback      = slot 6
-//  method[4]  EnableVideoOutput             = slot 7  ✓ S_OK confirmed
-//  method[5]  DisableVideoOutput            = slot 8
-//  method[6]  CreateVideoFrame              = slot 9
-//  method[7]  CreateVideoFrameWithBuffer    = slot 10
-//  method[8]  RowBytesForPixelFormat        = slot 11
-//  method[9]  CreateAncillaryData           = slot 12
-//  method[10] DisplayVideoFrameSync         = slot 13
-//  method[11] ScheduleVideoFrame            = slot 14
-//  method[12] SetScheduledFrameCompletionCallback = slot 15
-//  method[13] GetBufferedVideoFrameCount    = slot 16
-//  method[14] EnableAudioOutput             = slot 17
-//  method[15] DisableAudioOutput            = slot 18
-//  method[16] WriteAudioSamplesSync         = slot 19
-//  method[17] BeginAudioPreroll             = slot 20
-//  method[18] EndAudioPreroll               = slot 21
-//  method[19] ScheduleAudioSamples          = slot 22
-//  method[20] GetBufferedAudioSampleFrameCount = slot 23
-//  method[21] FlushBufferedAudioSamples     = slot 24
-//  method[22] SetAudioCallback              = slot 25
-//  method[23] StartScheduledPlayback        = slot 26
-//  method[24] StopScheduledPlayback         = slot 27
 
 using System;
 using System.Runtime.InteropServices;
