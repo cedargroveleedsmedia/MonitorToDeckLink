@@ -321,13 +321,18 @@ namespace MonitorToDeckLink
             // Signature: (mode, width, height, frameRateMode, flags, out supported, out displayMode)
             // Just call EnableVideoOutput and log the result - if E_ACCESSDENIED the sub-device is input-only
             Log($"Enabling video+audio output: {format.Label}");
-            // OBS enables audio output alongside video - some firmware requires both
             int audioHr = deckOutput.EnableAudioOutput();
             Log($"EnableAudioOutput returned: 0x{audioHr:X8}");
             int enableHr = deckOutput.EnableVideoOutput(format.ModeInt, 0);
             Log($"EnableVideoOutput returned: 0x{enableHr:X8}");
             if (enableHr != 0) throw new Exception($"EnableVideoOutput failed: 0x{enableHr:X8}");
             Log("Video output enabled!");
+
+            // Register frame completion callback (required before CreateVideoFrame/ScheduleVideoFrame)
+            var callback = new FrameCallback();
+            IntPtr callbackPtr = Marshal.GetComInterfaceForObject<FrameCallback, IDeckLinkVideoOutputCallback>(callback);
+            int cbHr = deckOutput.SetFrameCallback(callbackPtr);
+            Log($"SetFrameCallback hr=0x{cbHr:X8}");
 
             long   frameDuration = (long)(TimeSpan.TicksPerSecond / format.FrameRate);
             double framePeriodMs = 1000.0 / format.FrameRate;

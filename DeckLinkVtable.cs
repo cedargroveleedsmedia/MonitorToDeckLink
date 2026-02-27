@@ -47,6 +47,7 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    StopPlaybackDel(IntPtr self, long stopTime, out long actualStop, long scale);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    EnableAudioOutputDel(IntPtr self, int sampleRate, int sampleType, uint channelCount, int streamType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    GetBytesDel(IntPtr self, out IntPtr buffer);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    SetCallbackDel(IntPtr self, IntPtr callback);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    StartAccessDel(IntPtr self, int accessType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    EndAccessDel(IntPtr self, int accessType);
 
@@ -76,6 +77,10 @@ namespace MonitorToDeckLink
 
         public int GetBufferedVideoFrameCount(out uint count) =>
             Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[16])(_ptr, out count);
+
+        // SetScheduledFrameCompletionCallback at slot 15 (interface method 12)
+        public int SetFrameCallback(IntPtr callbackPtr) =>
+            Marshal.GetDelegateForFunctionPointer<SetCallbackDel>((IntPtr)_vt[15])(_ptr, callbackPtr);
 
         public int StartScheduledPlayback(long start, long scale, double speed) =>
             Marshal.GetDelegateForFunctionPointer<StartPlaybackDel>((IntPtr)_vt[25])(_ptr, start, scale, speed);
