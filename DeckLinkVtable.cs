@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace MonitorToDeckLink
 {
@@ -21,8 +22,7 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  EnableAudioOutputDel(IntPtr self, int sampleRate, int sampleType, uint channelCount, int streamType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  GetBytesDel(IntPtr self, out IntPtr buffer);
 
-        // Required by your MainWindow
-        public Action<string> Logger { get; set; }
+        public Action<string>? Logger { get; set; }
 
         public DeckLinkOutput(IntPtr ptr)
         {
@@ -57,21 +57,29 @@ namespace MonitorToDeckLink
 
         public int StopScheduledPlayback(long stop, long scale)
         {
-            Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out _, scale);
-            return 0;
+            long actualStop;
+            return Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out actualStop, scale);
         }
 
-        public int GetFrameBytes(IntPtr frame, out IntPtr bytes, Action<string> log)
+        public int GetFrameBytes(IntPtr frame, out IntPtr bytes, Action<string>? log)
         {
             bytes = IntPtr.Zero;
-            Guid g = new Guid("CF9EB134-0374-4C5B-95FA-1EC14819FF62"); // IDeckLinkVideoFrame
+            // IDeckLinkVideoFrame GUID
+            Guid g = new Guid("3F7103D0-4D01-4323-896B-53C7E950BD64");
             int qhr = Marshal.QueryInterface(frame, ref g, out IntPtr buf);
             if (qhr != 0) { log?.Invoke($"QI IDeckLinkVideoFrame failed: 0x{qhr:X8}"); return qhr; }
             
-            void** bvt = *(void***)buf;
-            int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[8])(buf, out bytes);
-            Marshal.Release(buf);
-            return gbHr;
+            try 
+            {
+                void** bvt = *(void***)buf;
+                // GetBytes is Method[5] -> Slot 8 (3 Unknown + 5 Methods)
+                int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[8])(buf, out bytes);
+                return gbHr;
+            }
+            finally 
+            {
+                Marshal.Release(buf);
+            }
         }
 
         public void ReleaseFrame(IntPtr frame)
@@ -83,7 +91,7 @@ namespace MonitorToDeckLink
 
         public string DumpVtable()
         {
-            var sb = new System.Text.StringBuilder();
+            var sb = new StringBuilder();
             for (int i = 0; i <= 27; i++)
                 sb.AppendLine($"  [{i:D2}] = 0x{(IntPtr)_vt[i]:X}");
             return sb.ToString();
