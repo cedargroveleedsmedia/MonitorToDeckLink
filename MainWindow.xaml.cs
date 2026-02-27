@@ -335,18 +335,35 @@ namespace MonitorToDeckLink
             int cbHr = deckOutput.SetFrameCallback(callbackPtr);
             Log($"SetFrameCallback hr=0x{cbHr:X8}");
 
-            long   frameDuration = (long)(TimeSpan.TicksPerSecond / format.FrameRate);
+            // Allocate frame pool ONCE before playback starts (like OBS does)
+            // OBS pre-allocates 3 frames and reuses them in a ring
+            const int POOL_SIZE = 3;
+            int    rowBytes = format.Width * 2;
+            long   tsScale  = (long)Math.Round(format.FrameRate * 1000);
+            var    frames   = new IntPtr[POOL_SIZE];
+            var    frameBufs= new IntPtr[POOL_SIZE];
+
+            Log($"Allocating {POOL_SIZE} frames ({format.Width}x{format.Height} rowBytes={rowBytes})...");
+            for (int i = 0; i < POOL_SIZE; i++)
+            {
+                int hr = deckOutput.CreateVideoFrame(format.Width, format.Height, rowBytes, 0x32767975, 0, out frames[i]);
+                Log($"  CreateVideoFrame[{i}] hr=0x{hr:X8} ptr=0x{frames[i]:X}");
+                if (hr != 0 || frames[i] == IntPtr.Zero)
+                    throw new Exception($"CreateVideoFrame[{i}] failed: 0x{hr:X8}");
+                deckOutput.GetFrameBytes(frames[i], out frameBufs[i], msg => Log(msg));
+                Log($"  GetBytes[{i}] buf=0x{frameBufs[i]:X}");
+            }
+            Log("Frame pool allocated.");
+
+            // Pre-buffer 2 frames then start playback
+            Log("Waiting for first DXGI frame to pre-buffer...");
             double framePeriodMs = 1000.0 / format.FrameRate;
             var    sw            = Stopwatch.StartNew();
             long   frameNumber   = 0;
             byte[]? lastFrame    = null;
             int    timeouts      = 0;
 
-            // Pre-buffer frames then start playback
-            long tsScale = (long)Math.Round(format.FrameRate * 1000);
-
             Log("Entering capture loop...");
-            Log("Waiting for first frame from DXGI...");
             while (!ct.IsCancellationRequested)
             {
                 double targetMs = frameNumber * framePeriodMs;
@@ -357,7 +374,6 @@ namespace MonitorToDeckLink
                 bool got = false;
                 try
                 {
-                    // Try up to 5 times with 20ms wait to get a frame
                     SharpDX.DXGI.Resource? res = null;
                     for (int attempt = 0; attempt < 5 && res == null; attempt++)
                     {
@@ -365,8 +381,6 @@ namespace MonitorToDeckLink
                             out OutputDuplicateFrameInformation fi,
                             out SharpDX.DXGI.Resource r);
                         if (hr.Success && r != null) { res = r; }
-                        else if (attempt == 0 && frameNumber < 3)
-                            Log($"TryAcquireNextFrame attempt {attempt}: hr={hr.Code}");
                     }
                     if (res != null)
                     {
@@ -381,13 +395,10 @@ namespace MonitorToDeckLink
                 }
                 catch (SharpDX.SharpDXException ex)
                 {
-                    if (timeouts == 0) Log($"TryAcquireNextFrame exception: {ex.ResultCode} {ex.Message}");
                     timeouts++;
                 }
 
-                int    rowBytes = format.Width * 2;
-                byte[] uyvy     = new byte[rowBytes * format.Height];
-
+                byte[] uyvy = new byte[rowBytes * format.Height];
                 if (got)
                 {
                     if (frameNumber == 0) Log("MapSubresource...");
@@ -407,36 +418,27 @@ namespace MonitorToDeckLink
                 else if (lastFrame != null) uyvy = lastFrame;
                 else { frameNumber++; continue; }
 
-                int createHr = deckOutput.CreateVideoFrame(
-                    format.Width, format.Height, rowBytes,
-                    0x32767975, 0,
-                    out IntPtr framePtr);
+                // Pick frame from pool (ring buffer)
+                int slot = (int)(frameNumber % POOL_SIZE);
+                IntPtr framePtr = frames[slot];
+                IntPtr bufPtr   = frameBufs[slot];
 
-                if (frameNumber == 0) Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
-
-                if (createHr == 0 && framePtr != IntPtr.Zero)
+                if (bufPtr != IntPtr.Zero)
                 {
-                    deckOutput.GetFrameBytes(framePtr, out IntPtr dst, msg => { if (frameNumber < 2) Log(msg); });
-                    if (dst != IntPtr.Zero)
-                    {
-                        fixed (byte* src = uyvy)
-                            System.Buffer.MemoryCopy(src, (void*)dst, uyvy.Length, uyvy.Length);
-                    }
-                    deckOutput.EndFrameAccess();
-                    int schedHr = deckOutput.ScheduleVideoFrame(framePtr,
-                        frameNumber * 1000L, 1000L, (long)Math.Round(format.FrameRate * 1000));
-                    if (frameNumber < 3) Log($"ScheduleVideoFrame[{frameNumber}] hr=0x{schedHr:X8}");
-                    deckOutput.ReleaseFrame(framePtr);
+                    fixed (byte* src = uyvy)
+                        System.Buffer.MemoryCopy(src, (void*)bufPtr, uyvy.Length, uyvy.Length);
                 }
-                else if (frameNumber < 3) Log($"CreateVideoFrame hr=0x{createHr:X8}");
+
+                int schedHr = deckOutput.ScheduleVideoFrame(framePtr,
+                    frameNumber * 1000L, 1000L, tsScale);
+                if (frameNumber < 3) Log($"ScheduleVideoFrame[{frameNumber}] hr=0x{schedHr:X8}");
 
                 frameNumber++;
 
-                // Start playback after pre-buffering 2 frames
                 if (frameNumber == 2)
                 {
-                    Log("StartScheduledPlayback (after pre-buffering)...");
-                    int startHr = deckOutput.StartScheduledPlayback(0, (long)Math.Round(format.FrameRate * 1000), 1.0);
+                    Log("StartScheduledPlayback...");
+                    int startHr = deckOutput.StartScheduledPlayback(0, tsScale, 1.0);
                     Log($"StartScheduledPlayback hr=0x{startHr:X8}");
                 }
 
@@ -452,6 +454,8 @@ namespace MonitorToDeckLink
             Log("Stopping...");
             deckOutput.StopScheduledPlayback(0, tsScale);
             deckOutput.DisableVideoOutput();
+            // Release frame pool
+            foreach (var f in frames) if (f != IntPtr.Zero) deckOutput.ReleaseFrame(f);
             Log("Done.");
         }
 
