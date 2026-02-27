@@ -250,7 +250,7 @@ namespace MonitorToDeckLink
                 }
                 catch (Exception ex) { tcs.SetException(ex); }
             });
-            staThread.SetApartmentState(ApartmentState.STA);
+            staThread.SetApartmentState(ApartmentState.MTA);
             staThread.IsBackground = true;
             staThread.Name = "DeckLinkCapture";
             staThread.Start();
