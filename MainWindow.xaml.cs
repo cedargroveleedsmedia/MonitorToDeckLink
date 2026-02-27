@@ -222,24 +222,11 @@ namespace MonitorToDeckLink
                             // Try multiple IDeckLinkOutput GUIDs to find the one matching Desktop Video 15.1
                             IntPtr iunk = Marshal.GetIUnknownForObject(dev);
                             // GUIDs from different SDK versions
-                            var outputGuids = new (string ver, Guid g)[] {
-                                ("v15.x/current", new Guid("CC5C8A6E-3F2F-4B3A-87EA-FD78AF300564")),
-                                ("v14_2_1",       new Guid("1A8077F1-9FE2-4533-8147-2294305E253F")),
-                                ("v10.8/old",     new Guid("A3EF0963-0862-44ED-92A9-EE89ABF431C7")),
-                            };
-                            IntPtr outPtr = IntPtr.Zero;
-                            int qiHr = -1;
-                            foreach (var (ver, g) in outputGuids)
-                            {
-                                var gg = g;
-                                int qhr = Marshal.QueryInterface(iunk, ref gg, out IntPtr p);
-                                Log($"QI IDeckLinkOutput {ver}: hr=0x{qhr:X8}" + (qhr==0 ? $" ptr=0x{p:X}" : ""));
-                                if (qhr == 0)
-                                {
-                                    if (outPtr == IntPtr.Zero) { outPtr = p; qiHr = 0; }
-                                    else Marshal.Release(p); // release extras
-                                }
-                            }
+                            // Use v14_2_1 GUID - EnableVideoOutput confirmed at slot 7
+                            // v15 GUID (CC5C8A6E) has different layout and crashes on slot 8
+                            Guid preferredGuid = new Guid("1A8077F1-9FE2-4533-8147-2294305E253F");
+                            int qiHr = Marshal.QueryInterface(iunk, ref preferredGuid, out IntPtr outPtr);
+                            Log($"QI IDeckLinkOutput v14_2_1: hr=0x{qiHr:X8} ptr=0x{outPtr:X}");
                             Marshal.Release(iunk);
                             if (qiHr == 0 && outPtr != IntPtr.Zero)
                             {
@@ -331,10 +318,6 @@ namespace MonitorToDeckLink
                 CpuAccessFlags = CpuAccessFlags.Read, OptionFlags = ResourceOptionFlags.None
             });
 
-            // Disable first in case device is still enabled from a previous run
-            int disHr = deckOutput.DisableVideoOutput();
-            Log($"DisableVideoOutput (pre-clear): 0x{disHr:X8}");
-
             Log($"Enabling video output: {format.Label} mode=0x{format.ModeInt:X8}");
             int enableHr = deckOutput.EnableVideoOutput(format.ModeInt, 0);
             Log($"EnableVideoOutput returned: 0x{enableHr:X8}");
@@ -418,7 +401,17 @@ namespace MonitorToDeckLink
                     0x32767975, 0,
                     out IntPtr framePtr);
 
-                if (frameNumber == 0) Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X}");
+                if (frameNumber == 0)
+                {
+                    Log($"CreateVideoFrame hr=0x{createHr:X8} ptr=0x{framePtr:X} slot={deckOutput.CreateSlot}");
+                    if (framePtr != IntPtr.Zero)
+                    {
+                        Guid mvfG = new Guid("69E2639F-40DA-4E19-B6F2-20ACE815C390");
+                        int qr = Marshal.QueryInterface(framePtr, ref mvfG, out IntPtr mvfP);
+                        Log($"  QI IDeckLinkMutableVideoFrame: 0x{qr:X8}");
+                        if (qr == 0) Marshal.Release(mvfP);
+                    }
+                }
 
                 if (createHr == 0 && framePtr != IntPtr.Zero)
                 {

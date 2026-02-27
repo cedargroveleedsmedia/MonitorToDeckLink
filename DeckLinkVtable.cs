@@ -73,8 +73,54 @@ namespace MonitorToDeckLink
         public int DisableVideoOutput() =>
             Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vt[8])(_ptr);
 
-        public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
-            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
+        private int _createSlot = -1;
+        public int CreateSlot => _createSlot;
+
+        public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame)
+        {
+            if (_createSlot >= 0)
+                return Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[_createSlot])(_ptr, w, h, rb, fmt, flags, out frame);
+
+            // Probe slots to find CreateVideoFrame - it must return a COM object
+            // implementing IDeckLinkMutableVideoFrame (or at least IDeckLinkVideoFrame)
+            Guid mvfGuid = new Guid("69E2639F-40DA-4E19-B6F2-20ACE815C390");
+            Guid vfGuid  = new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17");
+            for (int s = 9; s <= 15; s++)
+            {
+                frame = IntPtr.Zero;
+                try
+                {
+                    int hr = Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>
+                        ((IntPtr)_vt[s])(_ptr, w, h, rb, fmt, flags, out frame);
+                    if (hr == 0 && frame != IntPtr.Zero)
+                    {
+                        // Check if it's a real IDeckLinkVideoFrame (not just IUnknown)
+                        var g1 = mvfGuid;
+                        if (Marshal.QueryInterface(frame, ref g1, out IntPtr p1) == 0)
+                        {
+                            Marshal.Release(p1);
+                            _createSlot = s;
+                            System.Diagnostics.Debug.WriteLine($"CreateVideoFrame found at slot {s} (QI IDeckLinkMutableVideoFrame)");
+                            return 0;
+                        }
+                        var g2 = vfGuid;
+                        if (Marshal.QueryInterface(frame, ref g2, out IntPtr p2) == 0)
+                        {
+                            Marshal.Release(p2);
+                            _createSlot = s;
+                            System.Diagnostics.Debug.WriteLine($"CreateVideoFrame found at slot {s} (QI IDeckLinkVideoFrame)");
+                            return 0;
+                        }
+                        // Wrong slot - release and try next
+                        void** fvt = *(void***)frame;
+                        Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)fvt[2])(frame);
+                    }
+                }
+                catch { }
+            }
+            frame = IntPtr.Zero;
+            return -1;
+        }
 
         // DisplayVideoFrameSync - simpler than scheduled, use as fallback
         public int DisplayVideoFrameSync(IntPtr frame) =>
