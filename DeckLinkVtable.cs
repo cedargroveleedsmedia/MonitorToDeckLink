@@ -69,7 +69,7 @@ namespace MonitorToDeckLink
             Marshal.GetDelegateForFunctionPointer<EnableAudioOutputDel>((IntPtr)_vt[16])(_ptr, 48000, 16, 2, 1);
 
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
-            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[10])(_ptr, w, h, rb, fmt, flags, out frame);
+            Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
             Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frame, time, dur, scale);
