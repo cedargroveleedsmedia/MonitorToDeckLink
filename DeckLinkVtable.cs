@@ -69,8 +69,16 @@ namespace MonitorToDeckLink
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
             Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
 
-        public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
-            Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
+        public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale)
+        {
+            // ScheduleVideoFrame needs IDeckLinkVideoFrame, QI from IDeckLinkMutableVideoFrame
+            Guid videoFrameGuid = new Guid("3F716FE0-F023-4111-BE5D-EF4414C05B17");
+            int qhr = Marshal.QueryInterface(frame, ref videoFrameGuid, out IntPtr vf);
+            if (qhr != 0) return qhr; // QI failed, return error
+            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, vf, time, dur, scale);
+            Marshal.Release(vf);
+            return hr;
+        }
 
         public int SetFrameCallback(IntPtr cb) =>
             Marshal.GetDelegateForFunctionPointer<SetCallbackDel>((IntPtr)_vt[15])(_ptr, cb);
