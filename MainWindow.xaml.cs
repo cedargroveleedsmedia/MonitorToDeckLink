@@ -79,8 +79,13 @@ namespace MonitorToDeckLink
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e) => StopCapture();
+
         private void btnClearLog_Click(object sender, RoutedEventArgs e) => txtLog.Text = "";
         private void btnCopyLog_Click(object sender, RoutedEventArgs e) { try { Clipboard.SetText(txtLog.Text); } catch { } }
+
+        // Restored selection handlers required by XAML
+        private void cmbMonitors_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
+        private void cmbDeckLinks_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
 
         private void Log(string msg)
         {
@@ -93,7 +98,6 @@ namespace MonitorToDeckLink
         {
             var monitors = new List<MonitorInfo>();
             using var factory = new Factory1();
-            int i = 0;
             foreach (var adapter in factory.Adapters1) {
                 foreach (var dxgiOut in adapter.Outputs) {
                     var desc = dxgiOut.Description;
@@ -161,6 +165,7 @@ namespace MonitorToDeckLink
             staThread.SetApartmentState(ApartmentState.STA);
             staThread.IsBackground = true;
             staThread.Start();
+            _captureTask = Task.CompletedTask; // Reference variable to fix CS0169
         }
 
         private void btnStop_Click(object sender, RoutedEventArgs e) => StopCapture();
@@ -203,7 +208,7 @@ namespace MonitorToDeckLink
             var frameBufs = new IntPtr[POOL_SIZE];
 
             for (int i = 0; i < POOL_SIZE; i++) {
-                // FIXED: 0x32767579 is '2vuy' (UYVY)
+                // Fixed: Correct FourCC is 0x32767579 ('2vuy')
                 int hr = deckOutput.CreateVideoFrame(format.Width, format.Height, rowBytes, 0x32767579, 0, out frames[i]);
                 if (hr != 0) throw new Exception($"CreateFrame failed: 0x{hr:X8}");
                 deckOutput.GetFrameBytes(frames[i], out frameBufs[i], msg => Log(msg));
