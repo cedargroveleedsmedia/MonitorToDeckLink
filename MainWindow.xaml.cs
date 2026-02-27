@@ -321,20 +321,13 @@ namespace MonitorToDeckLink
             // DoesSupportVideoMode is at slot 3 (interface method 0)
             // Signature: (mode, width, height, frameRateMode, flags, out supported, out displayMode)
             // Just call EnableVideoOutput and log the result - if E_ACCESSDENIED the sub-device is input-only
-            Log($"Trying EnableVideoOutput on device index {cmbDeckLinks.SelectedIndex}: {format.Label} mode=0x{format.ModeInt:X8}");
+            Log($"Enabling video+audio output on device {cmbDeckLinks.SelectedIndex}: {format.Label}");
+            // OBS enables audio output alongside video - some firmware requires both
+            int audioHr = deckOutput.EnableAudioOutput();
+            Log($"EnableAudioOutput returned: 0x{audioHr:X8}");
             int enableHr = deckOutput.EnableVideoOutput(format.ModeInt, 0);
             Log($"EnableVideoOutput returned: 0x{enableHr:X8}");
-            // 0x80070005 = E_ACCESSDENIED = this sub-device is input-only or locked
-            // Try DisableVideoOutput first then re-enable
-            if (enableHr == unchecked((int)0x80070005))
-            {
-                Log("E_ACCESSDENIED - trying DisableVideoOutput then re-enable...");
-                deckOutput.DisableVideoOutput();
-                System.Threading.Thread.Sleep(500);
-                enableHr = deckOutput.EnableVideoOutput(format.ModeInt, 0);
-                Log($"Re-try EnableVideoOutput returned: 0x{enableHr:X8}");
-            }
-            if (enableHr != 0) throw new Exception($"EnableVideoOutput failed: 0x{enableHr:X8} - try a different device index");
+            if (enableHr != 0) throw new Exception($"EnableVideoOutput failed: 0x{enableHr:X8}");
             Log("Video output enabled!");
 
             long   frameDuration = (long)(TimeSpan.TicksPerSecond / format.FrameRate);

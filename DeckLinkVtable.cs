@@ -45,6 +45,7 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    GetBufferedCountDel(IntPtr self, out uint count);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    StartPlaybackDel(IntPtr self, long startTime, long scale, double speed);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    StopPlaybackDel(IntPtr self, long stopTime, out long actualStop, long scale);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    EnableAudioOutputDel(IntPtr self, int sampleRate, int sampleType, uint channelCount, int streamType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    GetBytesDel(IntPtr self, out IntPtr buffer);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    StartAccessDel(IntPtr self, int accessType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int    EndAccessDel(IntPtr self, int accessType);
@@ -61,6 +62,11 @@ namespace MonitorToDeckLink
 
         public int DisableVideoOutput() =>
             Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vt[8])(_ptr);
+
+        // EnableAudioOutput at slot 16 (interface method 13)
+        // bmdAudioSampleRate48kHz=48000, bmdAudioSampleType16bitInteger=16, bmdAudioOutputStreamTimestamped=1
+        public int EnableAudioOutput() =>
+            Marshal.GetDelegateForFunctionPointer<EnableAudioOutputDel>((IntPtr)_vt[16])(_ptr, 48000, 16, 2, 1);
 
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
             Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
