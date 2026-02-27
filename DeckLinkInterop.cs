@@ -25,10 +25,7 @@ namespace MonitorToDeckLink
         [PreserveSig] int SetScreenPreviewCallback([MarshalAs(UnmanagedType.Interface)] object callback);
         [PreserveSig] int EnableVideoOutput(int displayMode, int flags);
         [PreserveSig] int DisableVideoOutput();
-        [PreserveSig] int SetVideoOutputFrameMemoryAllocator([MarshalAs(UnmanagedType.Interface)] object allocator);
         [PreserveSig] int CreateVideoFrame(int width, int height, int rowBytes, int pixelFormat, int flags, [MarshalAs(UnmanagedType.Interface)] out IDeckLinkMutableVideoFrame2 frame);
-        [PreserveSig] int CreateVideoFrameWithBuffer(int width, int height, int rowBytes, int pixelFormat, int flags, IntPtr buffer, [MarshalAs(UnmanagedType.Interface)] out IDeckLinkMutableVideoFrame2 frame);
-        // ... truncated for relevance to Schedule ...
         [PreserveSig] int ScheduleVideoFrame([MarshalAs(UnmanagedType.Interface)] IDeckLinkMutableVideoFrame2 frame, long displayTime, long displayDuration, long timeScale);
     }
 
