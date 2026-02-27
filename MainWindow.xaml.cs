@@ -322,10 +322,11 @@ namespace MonitorToDeckLink
             // Signature: (mode, width, height, frameRateMode, flags, out supported, out displayMode)
             // Just call EnableVideoOutput and log the result - if E_ACCESSDENIED the sub-device is input-only
             Log($"Enabling video+audio output: {format.Label}");
-            int audioHr = deckOutput.EnableAudioOutput();
-            Log($"EnableAudioOutput returned: 0x{audioHr:X8}");
+            // EnableVideoOutput = slot 7 (method[4]), EnableAudioOutput = slot 17 (method[14])
             int enableHr = deckOutput.EnableVideoOutput(format.ModeInt, 0);
-            Log($"EnableVideoOutput returned: 0x{enableHr:X8}");
+            Log($"EnableVideoOutput(slot7) returned: 0x{enableHr:X8}");
+            int audioHr = deckOutput.EnableAudioOutput();
+            Log($"EnableAudioOutput(slot17) returned: 0x{audioHr:X8}");
             if (enableHr != 0) throw new Exception($"EnableVideoOutput failed: 0x{enableHr:X8}");
             Log("Video output enabled!");
 
