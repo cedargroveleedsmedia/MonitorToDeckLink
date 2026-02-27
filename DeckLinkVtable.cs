@@ -73,20 +73,13 @@ namespace MonitorToDeckLink
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale)
         {
-            // Try passing frame directly first (IDeckLinkMutableVideoFrame inherits IDeckLinkVideoFrame)
-            int hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
-            if (hr == 0) return hr;
-
-            // If that failed, try QI for IDeckLinkVideoFrame
-            Logger?.Invoke($"  ScheduleVideoFrame direct failed 0x{hr:X8}, trying QI...");
-            Guid videoFrameGuid = new Guid("6502091C-615F-4F51-BAF6-45C4256DD5B0");
-            int qhr = Marshal.QueryInterface(frame, ref videoFrameGuid, out IntPtr vf);
-            Logger?.Invoke($"  QI IDeckLinkVideoFrame: 0x{qhr:X8} ptr=0x{vf:X}");
-            if (qhr != 0) return qhr;
-            hr = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, vf, time, dur, scale);
-            Logger?.Invoke($"  ScheduleVideoFrame after QI: 0x{hr:X8}");
-            Marshal.Release(vf);
-            return hr;
+            // TLB says slot 14, but vtable shows address swap at 14/15 suggesting actual slot may be 13
+            // Try both and log results
+            int hr13 = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[13])(_ptr, frame, time, dur, scale);
+            Logger?.Invoke($"  slot13 hr=0x{hr13:X8}");
+            int hr14 = Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
+            Logger?.Invoke($"  slot14 hr=0x{hr14:X8}");
+            return hr13 == 0 ? hr13 : hr14;
         }
 
         public int SetFrameCallback(IntPtr cb) =>
