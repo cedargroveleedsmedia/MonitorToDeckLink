@@ -23,6 +23,8 @@ namespace MonitorToDeckLink
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  StartAccessDel(IntPtr self, int accessType);
         [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int  EndAccessDel(IntPtr self, int accessType);
 
+        public Action<string>? Logger { get; set; }
+
         public DeckLinkOutput(IntPtr ptr)
         {
             _ptr = ptr;
@@ -33,22 +35,14 @@ namespace MonitorToDeckLink
         public int EnableVideoOutput(int mode, int flags) =>
             Marshal.GetDelegateForFunctionPointer<EnableVideoOutputDel>((IntPtr)_vt[7])(_ptr, mode, flags);
 
-        public int DisableVideoOutput() =>
-            Marshal.GetDelegateForFunctionPointer<DisableVideoOutputDel>((IntPtr)_vt[8])(_ptr);
-
         public int CreateVideoFrame(int w, int h, int rb, int fmt, int flags, out IntPtr frame) =>
             Marshal.GetDelegateForFunctionPointer<CreateVideoFrameDel>((IntPtr)_vt[9])(_ptr, w, h, rb, fmt, flags, out frame);
-
-        public Action<string>? Logger { get; set; }
 
         public int ScheduleVideoFrame(IntPtr frame, long time, long dur, long scale) =>
             Marshal.GetDelegateForFunctionPointer<ScheduleVideoFrameDel>((IntPtr)_vt[14])(_ptr, frame, time, dur, scale);
 
         public int SetFrameCallback(IntPtr cb) =>
             Marshal.GetDelegateForFunctionPointer<SetCallbackDel>((IntPtr)_vt[15])(_ptr, cb);
-
-        public int GetBufferedVideoFrameCount(out uint count) =>
-            Marshal.GetDelegateForFunctionPointer<GetBufferedCountDel>((IntPtr)_vt[16])(_ptr, out count);
 
         public int EnableAudioOutput() =>
             Marshal.GetDelegateForFunctionPointer<EnableAudioOutputDel>((IntPtr)_vt[17])(_ptr, 48000, 16, 2, 1);
@@ -58,16 +52,17 @@ namespace MonitorToDeckLink
 
         public int StopScheduledPlayback(long stop, long scale)
         {
+            if (_ptr == IntPtr.Zero) return 0;
             Marshal.GetDelegateForFunctionPointer<StopPlaybackDel>((IntPtr)_vt[27])(_ptr, stop, out _, scale);
             return 0;
         }
 
-        public int GetFrameBytes(IntPtr frame, out IntPtr bytes, System.Action<string> log)
+        public int GetFrameBytes(IntPtr frame, out IntPtr bytes, Action<string>? log)
         {
             bytes = IntPtr.Zero;
             Guid g = new Guid("CCB4B64A-5C86-4E02-B778-885D352709FE");
             int qhr = Marshal.QueryInterface(frame, ref g, out IntPtr buf);
-            if (qhr != 0) { log($"QI IDeckLinkVideoBuffer failed: 0x{qhr:X8}"); return qhr; }
+            if (qhr != 0) { log?.Invoke($"QI failed: 0x{qhr:X8}"); return qhr; }
             void** bvt = *(void***)buf;
             Marshal.GetDelegateForFunctionPointer<StartAccessDel>((IntPtr)bvt[4])(buf, 2);
             int gbHr = Marshal.GetDelegateForFunctionPointer<GetBytesDel>((IntPtr)bvt[3])(buf, out bytes);
@@ -77,16 +72,9 @@ namespace MonitorToDeckLink
 
         private IntPtr _bufPtr; private void** _bufVt;
 
-        public void EndFrameAccess()
-        {
-            if (_bufPtr == IntPtr.Zero) return;
-            Marshal.GetDelegateForFunctionPointer<EndAccessDel>((IntPtr)_bufVt[5])(_bufPtr, 2);
-            Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)_bufVt[2])(_bufPtr);
-            _bufPtr = IntPtr.Zero;
-        }
-
         public void ReleaseFrame(IntPtr frame)
         {
+            if (frame == IntPtr.Zero) return;
             void** fvt = *(void***)frame;
             Marshal.GetDelegateForFunctionPointer<ReleaseDel>((IntPtr)fvt[2])(frame);
         }
