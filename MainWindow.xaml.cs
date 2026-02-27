@@ -19,7 +19,7 @@ namespace MonitorToDeckLink
         public int Width { get; set; }
         public int Height { get; set; }
         public bool IsPrimary { get; set; }
-        public override string ToString() => $"{(IsPrimary ? "★ " : "")}{Name} ({Width}×{Height})";
+        public override string ToString() => $"{(IsPrimary ? "★ " : "")}{Name} ({Width}x{Height})";
     }
 
     public class DeckLinkDeviceInfo
@@ -48,9 +48,9 @@ namespace MonitorToDeckLink
 
         private readonly List<OutputFormatInfo> _formats = new()
         {
-            new() { Label="1080p 60", ModeInt=0x48703630, Width=1920, Height=1080, TsScale=60, TsDuration=1 },
-            new() { Label="1080p 50", ModeInt=0x48703530, Width=1920, Height=1080, TsScale=50, TsDuration=1 },
-            new() { Label="1080p 30", ModeInt=0x48703330, Width=1920, Height=1080, TsScale=30, TsDuration=1 },
+            new() { Label="1080p 60", ModeInt=0x48703630, Width=1920, Height=1080, TsScale=60000, TsDuration=1000 },
+            new() { Label="1080p 59.94", ModeInt=0x48703539, Width=1920, Height=1080, TsScale=60000, TsDuration=1001 },
+            new() { Label="1080p 30", ModeInt=0x48703330, Width=1920, Height=1080, TsScale=30000, TsDuration=1000 },
         };
 
         public MainWindow()
@@ -60,7 +60,7 @@ namespace MonitorToDeckLink
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            Log("=== App Started ===");
+            Log("=== App Reverted & Fixed ===");
             PopulateMonitors();
             PopulateDeckLinks();
             cmbFormats.ItemsSource = _formats;
@@ -85,11 +85,15 @@ namespace MonitorToDeckLink
             var monitors = new List<MonitorInfo>();
             using var factory = new Factory1();
             int i = 1;
-            foreach (var adapter in factory.Adapters1)
-            {
-                foreach (var output in adapter.Outputs)
-                {
-                    monitors.Add(new MonitorInfo { Name = $"Monitor {i++}", DeviceName = output.Description.DeviceName, Width = output.Description.DesktopBounds.Right, Height = output.Description.DesktopBounds.Bottom });
+            foreach (var adapter in factory.Adapters1) {
+                foreach (var output in adapter.Outputs) {
+                    var desc = output.Description;
+                    monitors.Add(new MonitorInfo { 
+                        Name = $"Monitor {i++}", 
+                        DeviceName = desc.DeviceName, 
+                        Width = desc.DesktopBounds.Right - desc.DesktopBounds.Left, 
+                        Height = desc.DesktopBounds.Bottom - desc.DesktopBounds.Top 
+                    });
                     output.Dispose();
                 }
                 adapter.Dispose();
@@ -102,8 +106,7 @@ namespace MonitorToDeckLink
         {
             var devices = new List<DeckLinkDeviceInfo>();
             var iterator = (IDeckLinkIterator2)new CDeckLinkIterator2();
-            while (iterator.Next(out IDeckLink2 device) == 0 && device != null)
-            {
+            while (iterator.Next(out IDeckLink2 device) == 0 && device != null) {
                 device.GetDisplayName(out string name);
                 devices.Add(new DeckLinkDeviceInfo { Name = name, Device = device });
             }
@@ -169,7 +172,12 @@ namespace MonitorToDeckLink
 
             if (dupeOutput == null) return;
             using var deskDupe = dupeOutput.DuplicateOutput(d3dDevice);
-            using var stagingTex = new Texture2D(d3dDevice, new Texture2DDescription { Width = format.Width, Height = format.Height, MipLevels = 1, ArraySize = 1, Format = Format.B8G8R8A8_UNorm, SampleDescription = new SampleDescription(1, 0), Usage = ResourceUsage.Staging, CpuAccessFlags = CpuAccessFlags.Read });
+            using var stagingTex = new Texture2D(d3dDevice, new Texture2DDescription { 
+                Width = monitor.Width, Height = monitor.Height, 
+                MipLevels = 1, ArraySize = 1, Format = Format.B8G8R8A8_UNorm, 
+                SampleDescription = new SampleDescription(1, 0), Usage = ResourceUsage.Staging, 
+                CpuAccessFlags = CpuAccessFlags.Read 
+            });
 
             deckOutput.EnableVideoOutput(format.ModeInt, 0);
             var callback = new FrameCallback();
@@ -179,9 +187,11 @@ namespace MonitorToDeckLink
             const int POOL_SIZE = 3;
             IntPtr[] frames = new IntPtr[POOL_SIZE];
             IntPtr[] frameBufs = new IntPtr[POOL_SIZE];
+            int deckRowBytes = format.Width * 2; // Fixed pitch
 
             for (int i = 0; i < POOL_SIZE; i++) {
-                if (deckOutput.CreateVideoFrame(format.Width, format.Height, format.Width * 2, 0x32767579, 0, out frames[i]) == 0)
+                // FIXED FOURCC: 0x32767579 ('2vuy')
+                if (deckOutput.CreateVideoFrame(format.Width, format.Height, deckRowBytes, 0x32767579, 0, out frames[i]) == 0)
                     deckOutput.GetFrameBytes(frames[i], out frameBufs[i], msg => Log(msg));
             }
 
@@ -194,9 +204,8 @@ namespace MonitorToDeckLink
                     var mapped = d3dDevice.ImmediateContext.MapSubresource(stagingTex, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
                     int slot = (int)(frameCount % POOL_SIZE);
                     
-                    // FIXED: Check for null pointer before trying to write to the DeckLink card
                     if (frameBufs[slot] != IntPtr.Zero)
-                        BgraToUyvy((byte*)mapped.DataPointer, mapped.RowPitch, format.Width, format.Height, (byte*)frameBufs[slot], format.Width, format.Height);
+                        BgraToUyvy((byte*)mapped.DataPointer, mapped.RowPitch, monitor.Width, monitor.Height, (byte*)frameBufs[slot], format.Width, format.Height);
                     
                     d3dDevice.ImmediateContext.UnmapSubresource(stagingTex, 0);
                     deckOutput.ScheduleVideoFrame(frames[slot], frameCount * format.TsDuration, format.TsDuration, format.TsScale);
@@ -214,7 +223,8 @@ namespace MonitorToDeckLink
                 byte* sRow = src + (y * srcPitch);
                 byte* dRow = dst + (y * dstW * 2);
                 for (int x = 0; x < dstW; x += 2) {
-                    byte* p0 = sRow + (x * 4); byte* p1 = sRow + ((x + 1) * 4);
+                    byte* p0 = sRow + (x * 4);
+                    byte* p1 = sRow + ((x + 1) * 4);
                     dRow[0] = 128; dRow[1] = p0[1]; dRow[2] = 128; dRow[3] = p1[1];
                     dRow += 4;
                 }
