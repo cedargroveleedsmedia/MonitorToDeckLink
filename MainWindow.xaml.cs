@@ -424,9 +424,8 @@ namespace MonitorToDeckLink
                 // Start playback after pre-buffering 2 frames
                 if (frameNumber == 2)
                 {
-                    long tsScale = (long)Math.Round(format.FrameRate * 1000);
                     Log("StartScheduledPlayback (after pre-buffering)...");
-                    int startHr = deckOutput.StartScheduledPlayback(0, tsScale, 1.0);
+                    int startHr = deckOutput.StartScheduledPlayback(0, (long)Math.Round(format.FrameRate * 1000), 1.0);
                     Log($"StartScheduledPlayback hr=0x{startHr:X8}");
                 }
 
